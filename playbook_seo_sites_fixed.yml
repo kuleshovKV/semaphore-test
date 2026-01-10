@@ -1,0 +1,396 @@
+---
+- name: Deploy all SEO sites with dynamic favicons (IDEMPOTENT VERSION)
+  hosts: all
+  gather_facts: yes
+
+  vars:
+    web_root: "/var/www"
+    deployment_cache: "{{ web_root }}/.deployment_cache"
+    subdirs:
+      - register
+      - withdrawal
+      - reviews
+      - faq
+
+  tasks:
+    # ========== SETUP ==========
+    - name: Copy input files
+      copy:
+        src: "{{ item }}"
+        dest: "/tmp/{{ item }}"
+      loop:
+        - domains.csv
+        - brands.csv
+        - ref_links.conf
+
+    # ========== PARSING ==========
+    - name: Read domains.csv
+      slurp:
+        src: /tmp/domains.csv
+      register: domains_file
+
+    - name: Read brands.csv
+      slurp:
+        src: /tmp/brands.csv
+      register: brands_file
+
+    - name: Read ref_links.conf
+      slurp:
+        src: /tmp/ref_links.conf
+      register: ref_links_file
+
+    - name: Parse domains
+      set_fact:
+        domains: "{{ (domains_file.content | b64decode).strip().split('\n') | reject('equalto', '') | list }}"
+
+    - name: Parse brands
+      set_fact:
+        brands: "{{ (brands_file.content | b64decode).strip().split('\n') | reject('equalto', '') | list }}"
+
+    - name: Parse ref_links (raw)
+      set_fact:
+        ref_links_raw: "{{ (ref_links_file.content | b64decode).strip().split('\n') | reject('equalto', '') | list }}"
+
+    - name: Initialize ref_links dict
+      set_fact:
+        ref_links: {}
+
+    - name: Build ref_links dict (non-default)
+      set_fact:
+        ref_links: "{{ ref_links | combine({item.split('=')[0]: item.split('=')[1]}) }}"
+      loop: "{{ ref_links_raw }}"
+      when: 
+        - "'=' in item"
+        - "item.split('=')[0] != 'default'"
+
+    - name: Extract default ref_link
+      set_fact:
+        default_ref_link: "{{ item.split('=')[1] }}"
+      loop: "{{ ref_links_raw }}"
+      when:
+        - "'=' in item"
+        - "item.split('=')[0] == 'default'"
+
+    # ========== VALIDATION ==========
+    - name: Show deployment plan
+      debug:
+        msg: |
+          📊 DEPLOYMENT PLAN:
+
+          🌍 Domains: {{ domains | length }}
+          🏷️ Brands: {{ brands | length }}
+          🎨 Dynamic favicons: По первой букве бренда
+          📈 TOTAL SITES: {{ (domains | length) * (brands | length) }} × 4 subdirs = {{ (domains | length) * (brands | length) * 4 }} pages
+          ⏱️ Deployment cache: {{ deployment_cache }}
+
+    # ========== CHECK EXISTENCE ==========
+    - name: Check deployment cache
+      stat:
+        path: "{{ deployment_cache }}"
+      register: cache_stat
+
+    - name: Load last deployment hash
+      set_fact:
+        last_deployment_hash: "{{ lookup('file', deployment_cache) | regex_search('HASH=([a-f0-9]+)', '\\1') | first }}"
+      when: cache_stat.stat.exists
+      ignore_errors: yes
+
+    - name: Calculate current deployment hash
+      set_fact:
+        current_hash: "{{ (domains | join(',') + ':' + brands | join(',')) | hash('md5') }}"
+
+    - name: Skip deployment if already done
+      meta: end_play
+      when: 
+        - cache_stat.stat.exists
+        - last_deployment_hash is defined
+        - last_deployment_hash == current_hash
+
+    - name: Notify deployment starting
+      debug:
+        msg: "🚀 Starting fresh deployment (hash changed or first run)"
+
+    # ========== DIRECTORY CREATION (IDEMPOTENT) ==========
+    - name: Create site directories (if missing)
+      file:
+        path: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/{{ item[0] }}"
+      register: dir_creation
+
+    - name: Create subdirectories (if missing)
+      file:
+        path: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/{{ item[2] }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ domains | product(brands, subdirs) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/{{ item[2] }}"
+
+    # ========== HTML GENERATION (IDEMPOTENT) ==========
+    - name: Generate favicon by brand first letter
+      set_fact:
+        favicon_char: "{{ brands[0][0] | upper }}"
+
+    - name: Generate index.html for main pages (force=no = don't overwrite)
+      copy:
+        dest: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <meta name="robots" content="index, follow">
+              <title>{{ item[1] | upper }} - {{ item[0] | title }}</title>
+              <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-weight='bold' fill='%234CAF50'>{{ item[0][0] | upper }}</text></svg>">
+              <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      color: #fff;
+                      min-height: 100vh;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 20px;
+                  }
+                  .container {
+                      max-width: 600px;
+                      background: rgba(255,255,255,0.1);
+                      border-radius: 10px;
+                      padding: 40px;
+                      backdrop-filter: blur(10px);
+                      box-shadow: 0 8px 32px rgba(31,38,135,0.37);
+                  }
+                  h1 {
+                      font-size: 2.5em;
+                      margin-bottom: 20px;
+                      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                  }
+                  .domain { font-weight: bold; color: #FFD700; }
+                  .brand { color: #00FF88; }
+                  nav {
+                      margin-top: 30px;
+                      display: flex;
+                      gap: 10px;
+                      flex-wrap: wrap;
+                  }
+                  a {
+                      display: inline-block;
+                      padding: 10px 20px;
+                      background: rgba(255,255,255,0.2);
+                      border-radius: 5px;
+                      color: #fff;
+                      text-decoration: none;
+                      transition: all 0.3s ease;
+                  }
+                  a:hover {
+                      background: rgba(255,255,255,0.4);
+                      transform: translateY(-2px);
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>🎰 <span class="brand">{{ item[0] | title }}</span></h1>
+                  <p>Домен: <span class="domain">{{ item[1] }}</span></p>
+                  <p>Бренд: <span class="brand">{{ item[0] }}</span></p>
+                  <nav>
+                      <a href="./register/">📝 Регистрация</a>
+                      <a href="./withdrawal/">💰 Вывод средств</a>
+                      <a href="./reviews/">⭐ Отзывы</a>
+                      <a href="./faq/">❓ FAQ</a>
+                  </nav>
+              </div>
+              <script>
+                  // Cloaking for YandexBot
+                  const ua = navigator.userAgent;
+                  if (ua.indexOf('YandexBot') > -1 || ua.indexOf('Yandex') > -1) {
+                      document.body.innerHTML = '<h1>SEO Content for Yandex</h1><p>{{ item[0] | upper }} - {{ item[1] }}</p>';
+                  }
+              </script>
+          </body>
+          </html>
+        force: no
+        backup: no
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/index.html"
+      register: main_pages_created
+
+    - name: Generate register page (force=no)
+      copy:
+        dest: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/register/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <title>Регистрация - {{ item[0] | title }}</title>
+              <style>
+                  body { font-family: Arial, sans-serif; background: #f0f0f0; }
+                  .container { max-width: 600px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; }
+                  h1 { color: #333; }
+                  form { display: flex; flex-direction: column; }
+                  input { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+                  button { margin-top: 20px; padding: 10px; background: #667eea; color: white; border: none; cursor: pointer; border-radius: 4px; }
+                  button:hover { background: #764ba2; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>📝 Регистрация</h1>
+                  <p>Регистрация в {{ item[0] | title }} на домене {{ item[1] }}</p>
+                  <form>
+                      <input type="email" placeholder="Email" required>
+                      <input type="password" placeholder="Пароль" required>
+                      <button type="submit">Зарегистрироваться</button>
+                  </form>
+              </div>
+          </body>
+          </html>
+        force: no
+        backup: no
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/register/index.html"
+
+    - name: Generate withdrawal page (force=no)
+      copy:
+        dest: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/withdrawal/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <title>Вывод средств - {{ item[0] | title }}</title>
+              <style>
+                  body { font-family: Arial, sans-serif; background: #f0f0f0; }
+                  .container { max-width: 600px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; }
+                  h1 { color: #333; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>💰 Вывод средств</h1>
+                  <p>Информация о выводе средств из {{ item[0] | title }}</p>
+                  <p>Минимальная сумма: 100 руб.</p>
+                  <p>Время обработки: 1-5 рабочих дней</p>
+              </div>
+          </body>
+          </html>
+        force: no
+        backup: no
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/withdrawal/index.html"
+
+    - name: Generate reviews page (force=no)
+      copy:
+        dest: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/reviews/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <title>Отзывы - {{ item[0] | title }}</title>
+              <style>
+                  body { font-family: Arial, sans-serif; background: #f0f0f0; }
+                  .container { max-width: 600px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; }
+                  h1 { color: #333; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>⭐ Отзывы о {{ item[0] | title }}</h1>
+                  <p>Реальные отзывы игроков на {{ item[1] }}</p>
+                  <p>Рейтинг: 4.8/5.0</p>
+              </div>
+          </body>
+          </html>
+        force: no
+        backup: no
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/reviews/index.html"
+
+    - name: Generate FAQ page (force=no)
+      copy:
+        dest: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/faq/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <title>FAQ - {{ item[0] | title }}</title>
+              <style>
+                  body { font-family: Arial, sans-serif; background: #f0f0f0; }
+                  .container { max-width: 600px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; }
+                  h1 { color: #333; }
+                  .faq-item { margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 4px solid #667eea; }
+                  .question { font-weight: bold; cursor: pointer; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>❓ Часто задаваемые вопросы</h1>
+                  <div class="faq-item">
+                      <div class="question">Как начать игру?</div>
+                      <p>Зарегистрируйтесь и пополните счёт</p>
+                  </div>
+                  <div class="faq-item">
+                      <div class="question">Как вывести деньги?</div>
+                      <p>Перейдите в раздел вывод средств</p>
+                  </div>
+              </div>
+          </body>
+          </html>
+        force: no
+        backup: no
+      loop: "{{ domains | product(brands) | list }}"
+      loop_control:
+        label: "{{ item[1] }}/faq/index.html"
+
+    # ========== CACHE & FINALIZATION ==========
+    - name: Create deployment cache file with hash
+      copy:
+        content: |
+          # Deployment Cache
+          # Generated: {{ ansible_date_time.iso8601 }}
+          # Hash: {{ current_hash }}
+          HASH={{ current_hash }}
+          DOMAINS={{ domains | length }}
+          BRANDS={{ brands | length }}
+          TOTAL_SITES={{ (domains | length) * (brands | length) }}
+          DEPLOYMENT_TIME={{ ansible_date_time.iso8601 }}
+        dest: "{{ deployment_cache }}"
+        force: yes
+      register: cache_updated
+
+    - name: Deployment summary
+      debug:
+        msg: |
+          ✅ DEPLOYMENT COMPLETED SUCCESSFULLY
+
+          📊 Statistics:
+          - Domains created: {{ domains | length }}
+          - Brands deployed: {{ brands | length }}
+          - Total site combinations: {{ (domains | length) * (brands | length) }}
+          - Subdirectories per site: 4
+          - Total pages: {{ (domains | length) * (brands | length) * 4 }}
+
+          🎯 Directories created: {{ dir_creation.changed | ternary('Yes', 'No') }}
+          📝 Main pages generated: {{ main_pages_created.changed | ternary('Yes', 'No') }}
+          💾 Cache updated: {{ cache_updated.changed | ternary('Yes', 'No') }}
+
+          📁 Root directory: {{ web_root }}
+          🔐 Cache file: {{ deployment_cache }}
+          ⏱️ Timestamp: {{ ansible_date_time.iso8601 }}
+
+          🎉 All sites are ready for SEO optimization!

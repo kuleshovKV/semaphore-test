@@ -1,0 +1,22 @@
+---
+- name: Clean up all generated sites
+  hosts: all
+  become: yes
+  tasks:
+    - name: Remove /var/www completely
+      file:
+        path: /var/www
+        state: absent
+
+    - name: Recreate /var/www directory
+      file:
+        path: /var/www
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Remove deployment cache
+      file:
+        path: /var/www/.deployment_cache
+        state: absent

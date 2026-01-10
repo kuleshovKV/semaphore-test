@@ -1,0 +1,148 @@
+---
+- name: Deploy all SEO sites with Jinja2 templates (IDEMPOTENT VERSION)
+  hosts: all
+  gather_facts: yes
+
+  vars:
+    web_root: "/var/www"
+    deployment_cache: "{{ web_root }}/.deployment_cache"
+    subdirs:
+      - register
+      - withdrawal
+      - reviews
+      - faq
+
+  tasks:
+    # ========== SETUP ==========
+    - name: Copy input files
+      copy:
+        src: "{{ item }}"
+        dest: "/tmp/{{ item }}"
+      loop:
+        - domains.csv
+        - brands.csv
+        - ref_links.conf
+
+    # ========== PARSING ==========
+    - name: Read domains.csv
+      slurp:
+        src: /tmp/domains.csv
+      register: domains_file
+
+    - name: Read brands.csv
+      slurp:
+        src: /tmp/brands.csv
+      register: brands_file
+
+    - name: Parse domains
+      set_fact:
+        domains: "{{ (domains_file.content | b64decode).strip().split('\n') | reject('equalto', '') | list }}"
+
+    - name: Parse brands
+      set_fact:
+        brands: "{{ (brands_file.content | b64decode).strip().split('\n') | reject('equalto', '') | list }}"
+
+    # ========== DIRECTORY CREATION (IDEMPOTENT) ==========
+    - name: Create site directories (if missing)
+      file:
+        path: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+      loop: "{{ domains | product(brands) | list }}"
+
+    - name: Create subdirectories
+      file:
+        path: "{{ web_root }}/{{ item[0] }}/{{ item[1] }}/{{ item[2] }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ domains | product(brands, subdirs) | list }}"
+
+    # ========== TEMPLATE-BASED HTML GENERATION ==========
+    - name: Generate index.html from template
+      template:
+        src: site_template.html.j2
+        dest: "{{ web_root }}/{{ domain }}/{{ brand }}/index.html"
+        force: no
+      vars:
+        domain: "{{ item[0] }}"
+        brand: "{{ item[1] }}"
+        page_title: "{{ item[1] | upper }} - {{ item[0] | title }}"
+        page_description: "Best casino site {{ item[0]} for {{ item[1] }}"
+        page_content: |
+          <nav>
+              <a href="./register/">📝 Регистрация</a>
+              <a href="./withdrawal/">💰 Вывод средств</a>
+              <a href="./reviews/">⭐ Отзывы</a>
+              <a href="./faq/">❓ FAQ</a>
+          </nav>
+      loop: "{{ domains | product(brands) | list }}"
+      register: main_pages_created
+
+    - name: Generate register/index.html from template
+      template:
+        src: register_template.html.j2
+        dest: "{{ web_root }}/{{ domain }}/{{ brand }}/register/index.html"
+        force: no
+      vars:
+        domain: "{{ item[0] }}"
+        brand: "{{ item[1] }}"
+        page_title: "Регистрация - {{ item[1] | title }}"
+        page_description: "Register at {{ item[0] }}"
+        page_content: "<!-- register content -->"
+      loop: "{{ domains | product(brands) | list }}"
+
+    - name: Generate withdrawal/index.html from template
+      template:
+        src: withdrawal_template.html.j2
+        dest: "{{ web_root }}/{{ domain }}/{{ brand }}/withdrawal/index.html"
+        force: no
+      vars:
+        domain: "{{ item[0] }}"
+        brand: "{{ item[1] }}"
+        page_title: "Вывод средств - {{ item[1] | title }}"
+        page_description: "Withdrawal information"
+        page_content: "<!-- withdrawal content -->"
+      loop: "{{ domains | product(brands) | list }}"
+
+    - name: Generate reviews/index.html from template
+      template:
+        src: reviews_template.html.j2
+        dest: "{{ web_root }}/{{ domain }}/{{ brand }}/reviews/index.html"
+        force: no
+      vars:
+        domain: "{{ item[0] }}"
+        brand: "{{ item[1] }}"
+        page_title: "Отзывы - {{ item[1] | title }}"
+        page_description: "Reviews"
+        page_content: "<!-- reviews content -->"
+      loop: "{{ domains | product(brands) | list }}"
+
+    - name: Generate faq/index.html from template
+      template:
+        src: faq_template.html.j2
+        dest: "{{ web_root }}/{{ domain }}/{{ brand }}/faq/index.html"
+        force: no
+      vars:
+        domain: "{{ item[0] }}"
+        brand: "{{ item[1] }}"
+        page_title: "FAQ - {{ item[1] | title }}"
+        page_description: "FAQ"
+        page_content: "<!-- faq content -->"
+      loop: "{{ domains | product(brands) | list }}"
+
+    # ========== SUMMARY ==========
+    - name: Deployment summary
+      debug:
+        msg: |
+          ✅ DEPLOYMENT COMPLETED WITH TEMPLATES
+
+          📊 Statistics:
+          - Domains: {{ domains | length }}
+          - Brands: {{ brands | length }}
+          - Total sites: {{ (domains | length) * (brands | length) }}
+          - Pages per site: 4
+          - Total pages: {{ (domains | length) * (brands | length) * 4 }}
+
+          📁 Root: {{ web_root }}
+          📂 Templates used: 6 Jinja2 templates

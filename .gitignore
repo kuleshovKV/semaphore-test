@@ -1,0 +1,9 @@
+.ssh/
+.bash_history
+.bashrc
+.cache/
+.profile
+.lesshst
+.Xauthority
+.gitconfig
+get-docker.sh

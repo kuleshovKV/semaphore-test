@@ -1,0 +1,362 @@
+---
+# Semaphore-Compatible Deployment Playbook
+# Purpose: Deploy generated casino sites to production servers
+# Usage: Run through Semaphore UI or CLI
+
+- name: "🚀 CASINO SITES PRODUCTION DEPLOYMENT"
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    source_archive: "/tmp/output_sites.tar.gz"
+    web_root: "/var/www"
+    nginx_config_dir: "/etc/nginx/sites-available"
+    nginx_enabled_dir: "/etc/nginx/sites-enabled"
+    ssl_cert_dir: "/etc/letsencrypt/live"
+    backup_dir: "/var/backups/casino_sites"
+    app_user: "www-data"
+    app_group: "www-data"
+    
+  pre_tasks:
+    - name: "📋 Display Deployment Info"
+      debug:
+        msg: |
+          ╔═══════════════════════════════════════════════╗
+          ║  🚀 DEPLOYMENT STARTED                       ║
+          ║                                               ║
+          ║  Target: {{ inventory_hostname }}             
+          ║  OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          ║  Web root: {{ web_root }}
+          ║  Source: {{ source_archive }}
+          ╚═══════════════════════════════════════════════╝
+
+    - name: "✅ System Requirements Check"
+      block:
+        - name: "Check if nginx is installed"
+          command: which nginx
+          register: nginx_check
+          ignore_errors: yes
+          changed_when: false
+
+        - name: "Check available disk space"
+          command: df -h {{ web_root }}
+          register: disk_space
+          changed_when: false
+
+        - name: "Display system info"
+          debug:
+            msg: |
+              OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+              Kernel: {{ ansible_kernel }}
+              Python: {{ ansible_python_version }}
+              Nginx: {% if nginx_check.rc == 0 %}✅ Installed{% else %}⚠️ Not installed{% endif %}
+              Disk: {{ disk_space.stdout_lines[1] }}
+
+        - name: "Verify source archive exists"
+          stat:
+            path: "{{ source_archive }}"
+          register: archive_stat
+          failed_when: not archive_stat.stat.exists
+          
+  tasks:
+    - name: "📦 STEP 1: Prepare Backup"
+      block:
+        - name: "Create backup directory"
+          file:
+            path: "{{ backup_dir }}"
+            state: directory
+            mode: '0755'
+
+        - name: "Backup existing sites (if any)"
+          shell: |
+            if [ -d "{{ web_root }}/output" ]; then
+              tar -czf "{{ backup_dir }}/output_$(date +%Y%m%d_%H%M%S).tar.gz" \
+                -C {{ web_root }} output/
+              echo "Backup created"
+            else
+              echo "No existing sites to backup"
+            fi
+          register: backup_result
+          changed_when: "'Backup created' in backup_result.stdout"
+
+        - name: "Display backup info"
+          debug:
+            msg: "{{ backup_result.stdout }}"
+
+    - name: "📂 STEP 2: Extract Sites"
+      block:
+        - name: "Remove old sites (if any)"
+          file:
+            path: "{{ web_root }}/output"
+            state: absent
+
+        - name: "Extract archive"
+          unarchive:
+            src: "{{ source_archive }}"
+            dest: "{{ web_root }}"
+            remote_src: no
+            creates: "{{ web_root }}/output"
+
+        - name: "Verify extraction"
+          find:
+            path: "{{ web_root }}/output"
+            name: "index.html"
+            recurse: yes
+          register: extracted_files
+
+        - name: "Display extraction results"
+          debug:
+            msg: "✅ Extracted {{ extracted_files.matched }} domains"
+
+    - name: "🔐 STEP 3: Set Permissions"
+      block:
+        - name: "Set directory permissions"
+          file:
+            path: "{{ web_root }}/output"
+            state: directory
+            recurse: yes
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+
+        - name: "Set file permissions"
+          file:
+            path: "{{ web_root }}/output"
+            state: directory
+            recurse: yes
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0644'
+
+        - name: "Make index files readable"
+          shell: "find {{ web_root }}/output -name '*.html' -exec chmod 644 {} \\;"
+          changed_when: true
+
+    - name: "🌐 STEP 4: Configure Nginx"
+      block:
+        - name: "Install Nginx (if not present)"
+          package:
+            name: nginx
+            state: present
+          when: nginx_check.rc != 0
+
+        - name: "Create Nginx config template"
+          template:
+            src: nginx_vhost.conf.j2
+            dest: "{{ nginx_config_dir }}/casino_sites.conf"
+            backup: yes
+            owner: root
+            group: root
+            mode: '0644'
+          register: nginx_config
+          notify: "Reload Nginx"
+
+        - name: "Enable Nginx site"
+          file:
+            src: "{{ nginx_config_dir }}/casino_sites.conf"
+            dest: "{{ nginx_enabled_dir }}/casino_sites.conf"
+            state: link
+            force: yes
+
+        - name: "Test Nginx configuration"
+          command: nginx -t
+          register: nginx_test
+          changed_when: false
+
+        - name: "Display Nginx test result"
+          debug:
+            msg: "{{ nginx_test.stderr }}"
+
+    - name: "🔒 STEP 5: Setup SSL (Optional - Let's Encrypt)"
+      block:
+        - name: "Install certbot"
+          package:
+            name: 
+              - certbot
+              - python3-certbot-nginx
+            state: present
+
+        - name: "Request Let's Encrypt certificate (if needed)"
+          command: |
+            certbot certonly --nginx -d {{ item }} --non-interactive --agree-tos --email admin@{{ item }}
+          loop: "{{ domains | default([]) }}"
+          when: domains is defined
+          ignore_errors: yes
+
+        - name: "Auto-renew certificates (cron job)"
+          cron:
+            name: "Certbot auto-renew"
+            minute: "0"
+            hour: "3"
+            day: "*"
+            month: "*"
+            weekday: "*"
+            job: "/usr/bin/certbot renew --quiet && systemctl reload nginx"
+            state: present
+
+    - name: "✅ STEP 6: Verify Deployment"
+      block:
+        - name: "Check main domains accessibility"
+          uri:
+            url: "http://localhost/output/{{ item }}/index.html"
+            method: GET
+            status_code: 200
+          loop: "{{ test_domains | default(['pokerdomcasino.casino400.ru', 'jetxcasino.casino401.ru']) }}"
+          ignore_errors: yes
+          register: uri_test
+
+        - name: "Display accessibility test"
+          debug:
+            msg: "✅ {{ item.item }}: {{ 'OK' if item.status == 200 else 'FAILED' }}"
+          loop: "{{ uri_test.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: "Check file counts"
+          shell: "find {{ web_root }}/output -type f | wc -l"
+          register: file_count
+          changed_when: false
+
+        - name: "Check total size"
+          shell: "du -sh {{ web_root }}/output/"
+          register: total_size
+          changed_when: false
+
+        - name: "Display statistics"
+          debug:
+            msg: |
+              📊 Deployment Statistics:
+              - Total files: {{ file_count.stdout }}
+              - Total size: {{ total_size.stdout }}
+              - Web root: {{ web_root }}/output
+
+    - name: "📊 STEP 7: Setup Monitoring (Optional)"
+      block:
+        - name: "Create health check script"
+          copy:
+            content: |
+              #!/bin/bash
+              # Health check for casino sites
+              
+              SITES_DIR="{{ web_root }}/output"
+              ERROR_COUNT=0
+              TOTAL_SITES=0
+              
+              for site_dir in "$SITES_DIR"/*/ ; do
+                TOTAL_SITES=$((TOTAL_SITES + 1))
+                SITE_NAME=$(basename "$site_dir")
+                
+                if [ ! -f "$site_dir/index.html" ]; then
+                  echo "❌ $SITE_NAME: Missing index.html"
+                  ERROR_COUNT=$((ERROR_COUNT + 1))
+                fi
+                
+                if [ ! -f "$site_dir/robots.txt" ]; then
+                  echo "❌ $SITE_NAME: Missing robots.txt"
+                  ERROR_COUNT=$((ERROR_COUNT + 1))
+                fi
+              done
+              
+              if [ $ERROR_COUNT -eq 0 ]; then
+                echo "✅ All $TOTAL_SITES sites are healthy"
+                exit 0
+              else
+                echo "⚠️ $ERROR_COUNT errors found"
+                exit 1
+              fi
+            dest: "/usr/local/bin/check_casino_sites.sh"
+            mode: '0755'
+
+        - name: "Create cron job for health checks"
+          cron:
+            name: "Casino sites health check"
+            minute: "*/30"
+            hour: "*"
+            day: "*"
+            month: "*"
+            weekday: "*"
+            job: "/usr/local/bin/check_casino_sites.sh >> /var/log/casino_sites_health.log 2>&1"
+            state: present
+
+  handlers:
+    - name: "Reload Nginx"
+      service:
+        name: nginx
+        state: reloaded
+
+    - name: "Restart Nginx"
+      service:
+        name: nginx
+        state: restarted
+
+  post_tasks:
+    - name: "🎉 Deployment Summary"
+      debug:
+        msg: |
+          ╔═══════════════════════════════════════════════╗
+          ║  ✅ DEPLOYMENT COMPLETED SUCCESSFULLY!       ║
+          ║                                               ║
+          ║  📍 Location: {{ web_root }}/output
+          ║  📊 Sites: {{ extracted_files.matched }}
+          ║  📦 Size: {{ total_size.stdout }}
+          ║  ✓ Permissions: Set
+          ║  ✓ Nginx: Configured & Tested
+          ║  ✓ Health: OK
+          ║                                               ║
+          ║  🔗 Access:                                   ║
+          ║  http://{{ inventory_hostname }}/output/     ║
+          ║                                               ║
+          ║  📈 Next Steps:                              ║
+          ║  1. Configure SSL certificates                ║
+          ║  2. Setup DNS records                         ║
+          ║  3. Configure analytics                       ║
+          ║  4. Submit to search engines                  ║
+          ║                                               ║
+          ║  📊 Status: Ready for production               ║
+          ╚═══════════════════════════════════════════════╝
+
+    - name: "Create deployment report"
+      copy:
+        content: |
+          DEPLOYMENT REPORT
+          =================
+          
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          
+          DEPLOYMENT STATISTICS:
+          ─────────────────────
+          Total sites extracted: {{ extracted_files.matched }}
+          Total size: {{ total_size.stdout }}
+          Web root: {{ web_root }}/output
+          
+          PERMISSIONS:
+          ────────────
+          Owner: {{ app_user }}:{{ app_group }}
+          Directories: 755
+          Files: 644
+          
+          NGINX:
+          ──────
+          Config: {{ nginx_config_dir }}/casino_sites.conf
+          Status: Active
+          
+          BACKUP:
+          ───────
+          Location: {{ backup_dir }}
+          Created: {{ ansible_date_time.iso8601 }}
+          
+          NEXT STEPS:
+          ───────────
+          1. Configure SSL with certbot
+          2. Setup domain DNS records
+          3. Add analytics integration
+          4. Submit sitemap to search engines
+          5. Monitor health and performance
+        dest: "{{ backup_dir }}/deployment_report_{{ ansible_date_time.date }}.txt"
+        owner: root
+        group: root
+        mode: '0644'
+

@@ -1,0 +1,292 @@
+{
+  "project_name": "Casino Sites Generator & Deployer",
+  "project_description": "Enterprise solution for generating and deploying 1000+ casino websites with Semaphore",
+  "version": "2.1",
+  "created_date": "2026-01-12",
+  "domain_pattern": "{subdomain}casino.{domain.tld}",
+  
+  "repositories": [
+    {
+      "id": "repo_casino_generator",
+      "name": "Casino Generator Repository",
+      "url": "git@github.com:yourusername/casino-sites-generator.git",
+      "branch": "main",
+      "private_key_path": "/home/semaphore/.ssh/id_rsa",
+      "ssh_key": true
+    }
+  ],
+  
+  "inventories": [
+    {
+      "id": "inv_production",
+      "name": "Production Servers",
+      "type": "static",
+      "hosts": [
+        {
+          "hostname": "prod1.example.com",
+          "ip": "192.168.1.10",
+          "user": "deploy",
+          "port": 22,
+          "become": true,
+          "become_user": "root"
+        },
+        {
+          "hostname": "prod2.example.com",
+          "ip": "192.168.1.11",
+          "user": "deploy",
+          "port": 22,
+          "become": true,
+          "become_user": "root"
+        }
+      ]
+    },
+    {
+      "id": "inv_staging",
+      "name": "Staging Servers",
+      "type": "static",
+      "hosts": [
+        {
+          "hostname": "staging1.example.com",
+          "ip": "192.168.2.10",
+          "user": "deploy",
+          "port": 22,
+          "become": true,
+          "become_user": "root"
+        }
+      ]
+    },
+    {
+      "id": "inv_local",
+      "name": "Local Generator",
+      "type": "static",
+      "hosts": [
+        {
+          "hostname": "localhost",
+          "ip": "127.0.0.1",
+          "user": "semaphore",
+          "port": 22,
+          "become": false
+        }
+      ]
+    }
+  ],
+  
+  "task_templates": [
+    {
+      "id": "task_generate_sites",
+      "name": "Generate Casino Sites",
+      "description": "Generate 1000+ casino websites locally using Ansible & Python",
+      "playbook": "casino_sites_generator_v2.yml",
+      "inventory": "inv_local",
+      "variables": {
+        "batch_size": "50",
+        "max_parallel": "8",
+        "output_format": "tar.gz"
+      },
+      "schedule": "0 2 * * *",
+      "schedule_enabled": false
+    },
+    {
+      "id": "task_deploy_staging",
+      "name": "Deploy to Staging",
+      "description": "Deploy generated sites to staging environment for testing",
+      "playbook": "semaphore_deploy.yml",
+      "inventory": "inv_staging",
+      "variables": {
+        "source_archive": "/tmp/output_sites.tar.gz",
+        "web_root": "/var/www",
+        "enable_ssl": "false"
+      }
+    },
+    {
+      "id": "task_deploy_production",
+      "name": "Deploy to Production",
+      "description": "Deploy generated sites to production servers (REQUIRES APPROVAL)",
+      "playbook": "semaphore_deploy.yml",
+      "inventory": "inv_production",
+      "variables": {
+        "source_archive": "/tmp/output_sites.tar.gz",
+        "web_root": "/var/www",
+        "enable_ssl": "true"
+      },
+      "approval_required": true
+    },
+    {
+      "id": "task_verify_deployment",
+      "name": "Verify Deployment",
+      "description": "Verify deployed sites are accessible and healthy",
+      "playbook": "verify_deployment.yml",
+      "inventory": "inv_production"
+    },
+    {
+      "id": "task_backup",
+      "name": "Backup Production Sites",
+      "description": "Create backup of production sites",
+      "playbook": "backup_sites.yml",
+      "inventory": "inv_production",
+      "schedule": "0 3 * * *",
+      "schedule_enabled": true
+    },
+    {
+      "id": "task_health_check",
+      "name": "Health Check",
+      "description": "Run health checks on all deployed sites",
+      "playbook": "health_check.yml",
+      "inventory": "inv_production",
+      "schedule": "*/30 * * * *",
+      "schedule_enabled": true
+    }
+  ],
+  
+  "workflows": [
+    {
+      "id": "workflow_full_deployment",
+      "name": "Full Deployment Pipeline",
+      "description": "Complete flow: Generate → Deploy to Staging → Deploy to Production",
+      "tasks": [
+        {
+          "order": 1,
+          "task_id": "task_generate_sites"
+        },
+        {
+          "order": 2,
+          "task_id": "task_deploy_staging",
+          "depends_on": ["task_generate_sites"]
+        },
+        {
+          "order": 3,
+          "task_id": "task_verify_deployment",
+          "depends_on": ["task_deploy_staging"]
+        },
+        {
+          "order": 4,
+          "task_id": "task_deploy_production",
+          "depends_on": ["task_verify_deployment"],
+          "approval_required": true
+        }
+      ]
+    },
+    {
+      "id": "workflow_quick_deploy",
+      "name": "Quick Deploy to Production",
+      "description": "Deploy pre-generated sites directly to production",
+      "tasks": [
+        {
+          "order": 1,
+          "task_id": "task_deploy_production",
+          "approval_required": true
+        }
+      ]
+    }
+  ],
+  
+  "notifications": [
+    {
+      "type": "email",
+      "enabled": true,
+      "events": [
+        "task_success",
+        "task_failure",
+        "deployment_started",
+        "deployment_completed"
+      ],
+      "recipients": [
+        "admin@example.com",
+        "ops@example.com"
+      ]
+    },
+    {
+      "type": "slack",
+      "enabled": true,
+      "webhook_url": "${SLACK_WEBHOOK_URL}",
+      "events": [
+        "task_success",
+        "task_failure"
+      ],
+      "channel": "#deployments"
+    }
+  ],
+  
+  "environment_variables": {
+    "ANSIBLE_HOST_KEY_CHECKING": "False",
+    "ANSIBLE_INVENTORY_UNPARSED_WARNING": "False",
+    "SEMAPHORE_DEPLOYMENT_USER": "deploy",
+    "SEMAPHORE_DEPLOYMENT_GROUP": "deploy",
+    "WEB_ROOT": "/var/www",
+    "BACKUP_DIR": "/var/backups/casino_sites",
+    "LOG_DIR": "/var/log/casino_sites",
+    "DOMAIN_PATTERN": "{subdomain}casino.{domain}"
+  },
+  
+  "roles": [
+    {
+      "id": "role_admin",
+      "name": "Administrator",
+      "permissions": [
+        "create_project",
+        "edit_project",
+        "delete_project",
+        "run_task",
+        "approve_task",
+        "view_logs",
+        "manage_users"
+      ]
+    },
+    {
+      "id": "role_deployer",
+      "name": "Deployer",
+      "permissions": [
+        "run_task",
+        "view_logs",
+        "request_approval"
+      ]
+    },
+    {
+      "id": "role_viewer",
+      "name": "Viewer",
+      "permissions": [
+        "view_logs",
+        "view_history"
+      ]
+    }
+  ],
+  
+  "webhook_integrations": [
+    {
+      "type": "github",
+      "enabled": true,
+      "events": ["push", "pull_request"],
+      "trigger_task": "task_generate_sites",
+      "branches": ["main"]
+    }
+  ],
+  
+  "monitoring": {
+    "enable_metrics": true,
+    "metrics_port": 9090,
+    "prometheus_enabled": true,
+    "alerting_enabled": true,
+    "alert_rules": [
+      {
+        "name": "DeploymentFailure",
+        "condition": "task_failure_rate > 0.1",
+        "action": "notify_slack"
+      },
+      {
+        "name": "SitesDown",
+        "condition": "health_check_failed",
+        "action": "notify_email"
+      }
+    ]
+  },
+  
+  "cli_commands": {
+    "generate": "semaphore run --task-id task_generate_sites",
+    "deploy_staging": "semaphore run --task-id task_deploy_staging",
+    "deploy_prod": "semaphore run --task-id task_deploy_production --approve",
+    "verify": "semaphore run --task-id task_verify_deployment",
+    "backup": "semaphore run --task-id task_backup",
+    "health": "semaphore run --task-id task_health_check"
+  }
+}
+

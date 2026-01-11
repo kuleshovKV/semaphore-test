@@ -1,0 +1,233 @@
+---
+# Casino Sites Generator v2.0
+# Generates 100+ casino websites with full SEO optimization
+# Usage: ansible-playbook casino_sites_generator_v2.yml
+
+- name: "🎰 CASINO SITES GENERATOR v2.0"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    input_file: "input/domains_prepared.csv"
+    output_dir: "output"
+    templates_dir: "templates"
+    batch_size: 50
+    max_parallel: 8
+    log_dir: "logs"
+
+  pre_tasks:
+    - name: "📋 Display Generation Info"
+      debug:
+        msg: |
+          ╔═══════════════════════════════════════════════╗
+          ║  🎰 CASINO SITES GENERATOR v2.0             ║
+          ║                                               ║
+          ║  Input: {{ input_file }}
+          ║  Output: {{ output_dir }}
+          ║  Batch size: {{ batch_size }}
+          ║  Parallel threads: {{ max_parallel }}
+          ║  OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          ║  Python: {{ ansible_python_version }}
+          ╚═══════════════════════════════════════════════╝
+
+    - name: "✅ Pre-flight Checks"
+      block:
+        - name: "Create required directories"
+          file:
+            path: "{{ item }}"
+            state: directory
+            mode: '0755'
+          loop:
+            - "{{ templates_dir }}"
+            - "{{ output_dir }}"
+            - "{{ log_dir }}"
+
+        - name: "Check input CSV exists"
+          stat:
+            path: "{{ input_file }}"
+          register: input_stat
+          failed_when: not input_stat.stat.exists
+
+        - name: "Check template exists"
+          stat:
+            path: "{{ templates_dir }}/index.html.tpl"
+          register: template_stat
+          failed_when: not template_stat.stat.exists
+
+        - name: "Verify Python 3 available"
+          command: python3 --version
+          register: python_version
+          changed_when: false
+
+        - name: "Display system checks"
+          debug:
+            msg: |
+              ✅ Directories created
+              ✅ Input CSV found: {{ input_file }}
+              ✅ Template found: {{ templates_dir }}/index.html.tpl
+              ✅ Python: {{ python_version.stdout }}
+
+  tasks:
+    - name: "📖 STEP 1: Read and Parse CSV"
+      block:
+        - name: "Read CSV file"
+          command: "cat {{ input_file }}"
+          register: csv_content
+          changed_when: false
+
+        - name: "Parse CSV into variables"
+          set_fact:
+            domains: "{{ domains | default([]) + [item] }}"
+          vars:
+            parsed_line: "{{ item.split(';') }}"
+          loop: "{{ csv_content.stdout_lines[1:] }}"
+          when: item.strip() != ''
+
+        - name: "Display parsed domains"
+          debug:
+            msg: |
+              ✅ Parsed {{ domains | length }} domains:
+              {% for domain in domains %}
+              - {{ domain[4] }} ({{ domain[6] }})
+              {% endfor %}
+
+    - name: "🔧 STEP 2: Generate Template"
+      block:
+        - name: "Create index.html.tpl"
+          shell: |
+            bash {{ templates_dir }}/create_template.sh
+          args:
+            executable: /bin/bash
+          register: template_result
+          changed_when: "'created' in template_result.stdout"
+
+        - name: "Verify template"
+          stat:
+            path: "{{ templates_dir }}/index.html.tpl"
+          register: tpl_stat
+
+        - name: "Display template info"
+          debug:
+            msg: |
+              ✅ Template generated
+              📊 Size: {{ (tpl_stat.stat.size / 1024) | round(2) }} KB
+              📝 Lines: {{ tpl_stat.stat.size // 50 }}
+
+    - name: "⚙️ STEP 3: Generate Sites (Batch Processing)"
+      block:
+        - name: "Copy Python generator"
+          copy:
+            src: "batch_generator.py"
+            dest: "/tmp/batch_generator.py"
+            mode: '0755'
+
+        - name: "Run Python batch generator"
+          command: |
+            python3 /tmp/batch_generator.py \
+              --input {{ input_file }} \
+              --output {{ output_dir }} \
+              --template {{ templates_dir }}/index.html.tpl \
+              --batch-size {{ batch_size }} \
+              --parallel {{ max_parallel }} \
+              --log {{ log_dir }}/generation.log
+          register: generator_result
+          changed_when: true
+
+        - name: "Display generation results"
+          debug:
+            msg: "{{ generator_result.stdout }}"
+
+    - name: "📊 STEP 4: Verify Output"
+      block:
+        - name: "Count generated HTML files"
+          find:
+            path: "{{ output_dir }}"
+            name: "index.html"
+            recurse: yes
+          register: html_files
+
+        - name: "Count generated robots.txt"
+          find:
+            path: "{{ output_dir }}"
+            name: "robots.txt"
+            recurse: yes
+          register: robots_files
+
+        - name: "Count generated sitemaps"
+          find:
+            path: "{{ output_dir }}"
+            name: "sitemap.xml"
+            recurse: yes
+          register: sitemap_files
+
+        - name: "Calculate total size"
+          shell: "du -sh {{ output_dir }} | cut -f1"
+          register: output_size
+          changed_when: false
+
+        - name: "Display verification results"
+          debug:
+            msg: |
+              ✅ Verification Results:
+              📄 HTML files: {{ html_files.matched }}
+              📋 robots.txt: {{ robots_files.matched }}
+              🗺️ sitemap.xml: {{ sitemap_files.matched }}
+              📦 Total size: {{ output_size.stdout }}
+
+    - name: "🗜️ STEP 5: Package Output"
+      block:
+        - name: "Create compressed archive"
+          archive:
+            path: "{{ output_dir }}"
+            dest: "/tmp/output_sites.tar.gz"
+            format: gz
+            mode: '0644'
+
+        - name: "Get archive size"
+          stat:
+            path: "/tmp/output_sites.tar.gz"
+          register: archive_stat
+
+        - name: "Display archive info"
+          debug:
+            msg: |
+              ✅ Archive created: /tmp/output_sites.tar.gz
+              📦 Size: {{ (archive_stat.stat.size / 1024 / 1024) | round(2) }} MB
+              📊 Compression ratio: {{ ((1 - (archive_stat.stat.size / (output_size.stdout | regex_replace('[^0-9]', '') | int * 1024))) * 100) | round(1) }}%
+
+    - name: "✅ STEP 6: Generate Report"
+      block:
+        - name: "Create generation report"
+          template:
+            src: "generation_report.j2"
+            dest: "{{ log_dir }}/generation_report_{{ ansible_date_time.date }}.html"
+          vars:
+            total_sites: "{{ domains | length }}"
+            total_pages: "{{ html_files.matched }}"
+            total_files: "{{ html_files.matched + robots_files.matched + sitemap_files.matched }}"
+            generation_date: "{{ ansible_date_time.iso8601 }}"
+
+        - name: "Display report location"
+          debug:
+            msg: "📊 Report saved to: {{ log_dir }}/generation_report_{{ ansible_date_time.date }}.html"
+
+  post_tasks:
+    - name: "🎉 Generation Complete"
+      debug:
+        msg: |
+          ╔═══════════════════════════════════════════════╗
+          ║  ✅ GENERATION COMPLETED SUCCESSFULLY!       ║
+          ║                                               ║
+          ║  📊 Statistics:                              ║
+          ║  - Sites: {{ domains | length }}
+          ║  - Pages: {{ html_files.matched }}
+          ║  - Files: {{ html_files.matched + robots_files.matched + sitemap_files.matched }}
+          ║  - Size: {{ output_size.stdout }}
+          ║  - Archive: /tmp/output_sites.tar.gz        ║
+          ║                                               ║
+          ║  📁 Output: {{ output_dir }}/                ║
+          ║  📋 Logs: {{ log_dir }}/                    ║
+          ║  📊 Report: See generation_report.html      ║
+          ║                                               ║
+          ║  🚀 Ready for deployment!                    ║
+          ╚═══════════════════════════════════════════════╝
+

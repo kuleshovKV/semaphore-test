@@ -133,7 +133,7 @@
               <meta property="og:url" content="https://{{ item[1] | title }}/{{ item[1] }}/">
               <meta name="twitter:card" content="summary_large_image">
               <title>{{ item[1] | upper }} Casino - играй в казино онлайн, бонусы на {{ item[1] | title }}</title>
-              <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-weight='bold' fill='%23{{ (item[1][0] | ord) % 256 | hex | lower }}'>{# Цвет по первой букве #}</text></svg>">
+              <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-weight='bold' fill='%2300FF88'>{# Цвет по первой букве #}</text></svg>">
               <style>
                   * { margin: 0; padding: 0; box-sizing: border-box; }
                   body {

@@ -58,10 +58,17 @@
         brands: "{{ brands_content.content | b64decode | split('\n') | reject('equalto', '') | list }}"
       run_once: true
 
-    # ========== ПАРСИМ REF_LINKS В СЛОВАРЬ ==========
+    # ========== ПАРСИМ REF_LINKS В СЛОВАРЬ (ИСПРАВЛЕНО) ==========
     - name: Parse ref_links into dictionary
       set_fact:
-        ref_links_dict: "{{ dict(ref_links_content.content | b64decode | split('\n') | reject('equalto', '') | map('split', '=') | select('length', '>', 1) | map('list') | list) }}"
+        ref_links_raw: "{{ ref_links_content.content | b64decode | split('\n') | reject('equalto', '') }}"
+      run_once: true
+
+    - name: Build ref_links dictionary
+      set_fact:
+        ref_links_dict: "{{ ref_links_dict | default({}) | combine({item.split('=')[0]: item.split('=')[1]}) }}"
+      loop: "{{ ref_links_raw }}"
+      when: "'=' in item"
       run_once: true
 
     # ========== ПРОВЕРЯЕМ ЗАГРУЖЕННЫЕ ДАННЫЕ ==========
@@ -510,5 +517,4 @@
             ✅ robots.txt на все домены
             ✅ Mobile responsive дизайн
             ✅ 1200+ уникальных слов на странице
-            ✅ Smart ref_links (бренд-специфичные или default)
       run_once: true

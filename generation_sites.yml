@@ -194,23 +194,6 @@
                   </nav>
               </div>
               
-              <script>
-                  // Cloaking for YandexBot - SEO оптимизация
-                  const ua = navigator.userAgent;
-                  if (ua.indexOf('YandexBot') > -1 || ua.indexOf('Yandex') > -1) {
-                      const seoContent = '<h1>{{ item[1] | upper }} Casino - лучший казино на {{ item[1] | title }}</h1>' +
-                          '<h2>Почему выбрать {{ item[1] }}?</h2>' +
-                          '<p>{{ item[1] | upper }} казино имеет лицензию Curacao, гарантирует честность игр RTP 96-98%, ' +
-                          'выплачивает выигрыши в течение 24 часов, предлагает бонусы до 50,000 рублей.</p>' +
-                          '<h3>Регистрация в {{ item[1] }} казино</h3>' +
-                          '<p>Зарегистрируйтесь прямо сейчас и получите приветственный бонус 100% до 50,000 руб!</p>';
-                      // Добавляем SEO-контент для YandexBot (мягкий метод)
-            const seoDiv = document.createElement("div");
-            seoDiv.style.display = "none";
-            seoDiv.innerHTML = seoContent;
-            document.body.appendChild(seoDiv);
-                  }
-              </script>
           </body>
           </html>
         dest: "{{ www_root }}/{{ item[0] }}/{{ item[1] }}/index.html"

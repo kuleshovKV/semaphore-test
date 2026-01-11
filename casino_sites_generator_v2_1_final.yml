@@ -121,7 +121,7 @@
         - name: "Execute template generation script"
           shell: |
             cd {{ work_dir }}
-            bash index.html.tpl_FULL.sh
+            sh index.html.tpl_FULL.sh
           when: template_script.stat.exists
           register: template_result
 

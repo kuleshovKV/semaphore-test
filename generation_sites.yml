@@ -3,24 +3,51 @@
   gather_facts: false
   
   tasks:
-    - name: Load domains from git repository
-      slurp:
+    # ========== КОПИРУЕМ ФАЙЛЫ ИЗ РЕПОЗИТОРИЯ В РАБОЧУЮ ДИРЕКТОРИЮ ==========
+    - name: Copy domains.csv to working directory
+      copy:
         src: "{{ playbook_dir }}/domains.csv"
-      register: domains_content
+        dest: "/tmp/domains.csv"
+      delegate_to: localhost
       run_once: true
 
-    - name: Load brands from git repository
-      slurp:
+    - name: Copy brands.csv to working directory
+      copy:
         src: "{{ playbook_dir }}/brands.csv"
-      register: brands_content
+        dest: "/tmp/brands.csv"
+      delegate_to: localhost
       run_once: true
 
-    - name: Load ref_links from git repository
-      slurp:
+    - name: Copy ref_links.conf to working directory
+      copy:
         src: "{{ playbook_dir }}/ref_links.conf"
-      register: ref_links_content
+        dest: "/tmp/ref_links.conf"
+      delegate_to: localhost
       run_once: true
 
+    # ========== ЗАГРУЖАЕМ ФАЙЛЫ ==========
+    - name: Load domains
+      slurp:
+        src: "/tmp/domains.csv"
+      register: domains_content
+      delegate_to: localhost
+      run_once: true
+
+    - name: Load brands
+      slurp:
+        src: "/tmp/brands.csv"
+      register: brands_content
+      delegate_to: localhost
+      run_once: true
+
+    - name: Load ref_links
+      slurp:
+        src: "/tmp/ref_links.conf"
+      register: ref_links_content
+      delegate_to: localhost
+      run_once: true
+
+    # ========== ПАРСИМ ДАННЫЕ ==========
     - name: Parse domains
       set_fact:
         domains: "{{ domains_content.content | b64decode | split('\n') | reject('equalto', '') | list }}"
@@ -36,21 +63,23 @@
         ref_links: "{{ ref_links_content.content | b64decode | trim }}"
       run_once: true
 
-    - name: Display loaded domains
+    # ========== ПРОВЕРЯЕМ ЗАГРУЖЕННЫЕ ДАННЫЕ ==========
+    - name: Debug - Show domains
       debug:
-        msg: "✅ Domains: {{ domains | join(', ') }}"
+        msg: "✅ Domains loaded: {{ domains }}"
       run_once: true
 
-    - name: Display loaded brands
+    - name: Debug - Show brands
       debug:
-        msg: "✅ Brands: {{ brands | join(', ') }}"
+        msg: "✅ Brands loaded: {{ brands }}"
       run_once: true
 
-    - name: Display loaded ref_links
+    - name: Debug - Show ref_links
       debug:
-        msg: "✅ Ref Links loaded"
+        msg: "✅ Ref links loaded ({{ ref_links | length }} chars)"
       run_once: true
 
+    # ========== СОЗДАЁМ ДИРЕКТОРИИ ==========
     - name: Create site directories
       file:
         path: "/var/www/{{ item[0] }}/{{ item[1] }}"
@@ -60,6 +89,7 @@
         mode: '0755'
       loop: "{{ domains | product(brands) | list }}"
 
+    # ===== 1. INDEX.HTML =====
     - name: Generate index.html
       copy:
         content: |
@@ -77,10 +107,10 @@
                   * { margin: 0; padding: 0; box-sizing: border-box; }
                   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
                   .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-                  h1 { font-size: 2.5em; margin: 30px 0; color: #1a1a1a; }
-                  h2 { font-size: 1.8em; margin: 30px 0 15px 0; color: #2c3e50; border-bottom: 3px solid #FF6B35; }
-                  p { margin: 15px 0; font-size: 1.1em; line-height: 1.8; }
-                  .cta-button { display: inline-block; background: #FF6B35; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; font-weight: bold; }
+                  h1 { font-size: 2.5em; margin: 30px 0; }
+                  h2 { font-size: 1.8em; margin: 30px 0 15px 0; border-bottom: 3px solid #FF6B35; }
+                  p { margin: 15px 0; line-height: 1.8; }
+                  .cta-button { background: #FF6B35; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; font-weight: bold; display: inline-block; }
                   table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }
                   th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
                   th { background: #FF6B35; color: white; }
@@ -91,37 +121,39 @@
               <div class="container">
                   <h1>🎰 {{ item[1] | upper }} Casino</h1>
                   
-                  <p><strong>{{ item[1] | upper }} casino</strong> — премиальная платформа с лицензией Curacao. На сайте 7200+ слотов. <strong>Казино {{ item[1] | upper }}</strong> гарантирует вывод за 15-30 минут.</p>
+                  <p><strong>{{ item[1] | upper }} casino</strong> — премиальная платформа с лицензией Curacao. На сайте 7200+ слотов. <strong>Казино {{ item[1] | upper }}</strong> гарантирует вывод за 15-30 минут и поддержку 24/7 на русском языке.</p>
                   
-                  <p><strong>{{ item[1] | title }} casino</strong> предлагает 100% бонус до 50,000 рублей + 100 фриспинов. Все игры честные. Рейтинг 4.8★ от 5000+ игроков.</p>
+                  <p><strong>{{ item[1] | title }} casino</strong> предлагает лучшие условия: 100% бонус до 50,000 рублей + 100 фриспинов. Все игры честные с сертифицированным RNG. Рейтинг 4.8★ от 5000+ игроков.</p>
                   
-                  <a href="./register/" class="cta-button">→ Регистрация</a>
+                  <a href="./register/" class="cta-button">→ Регистрация и +50,000 рублей</a>
                   
-                  <h2>Почему {{ item[1] | upper }} Casino?</h2>
-                  <p><strong>{{ item[1] | upper }} казино</strong> завоевало доверие честной игрой. На платформе сертифицированный RNG. Лицензия Curacao подтверждает легальность.</p>
+                  <h2>Почему выбирают {{ item[1] | upper }} Casino?</h2>
+                  <p><strong>{{ item[1] | upper }} казино</strong> завоевало репутацию честной платформой. На {{ item[1] | upper }} casino работает сертифицированный RNG от iTech Labs. Лицензия Curacao eGaming подтверждает легальность всех операций.</p>
                   
                   <table>
-                      <tr><th>Параметр</th><th>Значение</th></tr>
-                      <tr><td>Лицензия</td><td>Curacao eGaming ✅</td></tr>
-                      <tr><td>Слотов</td><td>7200+</td></tr>
-                      <tr><td>Минимум</td><td>100 рублей</td></tr>
-                      <tr><td>Вывод</td><td>15-30 минут</td></tr>
-                      <tr><td>Бонус</td><td>100% до 50,000 руб</td></tr>
+                      <tr><th>Параметр</th><th>{{ item[1] | upper }} Casino</th></tr>
+                      <tr><td>📜 Лицензия</td><td>Curacao eGaming ✅</td></tr>
+                      <tr><td>🎰 Игровых автоматов</td><td>7200+ слотов</td></tr>
+                      <tr><td>💳 Минимальный депозит</td><td>100 рублей</td></tr>
+                      <tr><td>⚡ Скорость вывода</td><td>15-30 минут</td></tr>
+                      <tr><td>🎁 Приветственный бонус</td><td>100% до 50,000 руб + 100 FS</td></tr>
+                      <tr><td>💬 Поддержка</td><td>24/7 на русском</td></tr>
                   </table>
                   
-                  <h2>Способы платежа</h2>
+                  <h2>Способы пополнения на {{ item[1] | upper }} casino</h2>
                   <table>
-                      <tr><th>Метод</th><th>Минимум</th><th>Скорость</th></tr>
-                      <tr><td>СБП</td><td>1,500 руб</td><td>Мгновенно</td></tr>
-                      <tr><td>Joker</td><td>150 руб</td><td>5-10 мин</td></tr>
-                      <tr><td>Карта</td><td>100 руб</td><td>15-30 мин</td></tr>
+                      <tr><th>💳 Метод платежа</th><th>💰 Минимум</th><th>⚡ Скорость</th></tr>
+                      <tr><td>СБП (Система быстрых платежей)</td><td>1,500 руб</td><td>Мгновенно</td></tr>
+                      <tr><td>Joker Wallet</td><td>150 руб</td><td>5-10 минут</td></tr>
+                      <tr><td>Банковская карта Visa/Mastercard</td><td>100 руб</td><td>15-30 минут</td></tr>
+                      <tr><td>Криптовалюта (USDT, BTC)</td><td>15 EUR</td><td>5-15 минут</td></tr>
                   </table>
                   
                   <div class="ref-links">
                       {{ ref_links | safe }}
                   </div>
                   
-                  <div style="text-align: center; margin-top: 40px;">
+                  <div style="text-align: center; margin-top: 40px; padding: 20px; background: #f0f0f0;">
                       <a href="./" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">Главная</a>
                       <a href="./register/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">Регистрация</a>
                       <a href="./reviews/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">Отзывы</a>
@@ -150,11 +182,11 @@
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
               <div style="max-width: 1200px; margin: 0 auto;">
                   <h1>Регистрация в {{ item[1] | upper }} Casino</h1>
-                  <p>90 секунд, 50,000 рублей бонуса!</p>
-                  <ol><li>Создайте аккаунт</li><li>Email и пароль</li><li>Личные данные</li><li>Депозит</li><li>Бонус!</li></ol>
+                  <p>Регистрируйся за 90 секунд и получи 50,000 рублей бонуса!</p>
+                  <ol style="margin-left: 20px;"><li>Нажми "Регистрация"</li><li>Email + пароль</li><li>Личные данные</li><li>Пополни счёт</li><li>Получи бонус!</li></ol>
                   <div style="text-align: center; margin-top: 30px;">
-                      <a href="./" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">← Главная</a>
-                      <a href="./reviews/" style="color: #FF6B35; font-weight: bold; text-decoration: none;">Отзывы →</a>
+                      <a href="./" style="margin-right: 20px; color: #FF6B35; font-weight: bold;">← Главная</a>
+                      <a href="./reviews/" style="color: #FF6B35; font-weight: bold;">Отзывы →</a>
                   </div>
               </div>
           </body>
@@ -173,17 +205,18 @@
           <head>
               <meta charset="UTF-8">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/reviews/">
-              <title>Отзывы о {{ item[1] | upper }} Casino</title>
+              <title>Отзывы о {{ item[1] | upper }} Casino - 4.8★</title>
           </head>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
               <div style="max-width: 1200px; margin: 0 auto;">
-                  <h1>Отзывы о {{ item[1] | upper }} Casino - 4.8★</h1>
-                  <div style="background: white; padding: 20px; margin: 15px 0;">
-                      <strong>Иван К.:</strong> Выиграл 250,000 рублей! ★★★★★
+                  <h1>Отзывы о {{ item[1] | upper }} Casino</h1>
+                  <p>⭐⭐⭐⭐⭐ Рейтинг: 4.8/5.0 (5000+ отзывов)</p>
+                  <div style="background: white; padding: 20px; margin: 15px 0; border-left: 4px solid #FF6B35;">
+                      <strong>Иван К. из Москвы:</strong> "Выиграл 250,000 рублей в {{ item[1] | upper }} casino! Вывод прошёл за 20 минут. Рекомендую! ★★★★★"
                   </div>
                   <div style="text-align: center; margin-top: 30px;">
-                      <a href="./bonus/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">← Бонусы</a>
-                      <a href="./withdrawal/" style="color: #FF6B35; font-weight: bold; text-decoration: none;">Вывод →</a>
+                      <a href="./bonus/" style="margin-right: 20px; color: #FF6B35; font-weight: bold;">← Бонусы</a>
+                      <a href="./withdrawal/" style="color: #FF6B35; font-weight: bold;">Вывод денег →</a>
                   </div>
               </div>
           </body>
@@ -207,10 +240,10 @@
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
               <div style="max-width: 1200px; margin: 0 auto;">
                   <h1>Бонусы в {{ item[1] | upper }} Casino</h1>
-                  <p>100% до 50,000 рублей + 100 фриспинов!</p>
+                  <p>{{ item[1] | upper }} casino дарит щедрые бонусы: 100% до 50,000 рублей + 100 фриспинов на популярные слоты!</p>
                   <div style="text-align: center; margin-top: 30px;">
-                      <a href="./reviews/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">← Отзывы</a>
-                      <a href="./withdrawal/" style="color: #FF6B35; font-weight: bold; text-decoration: none;">Вывод →</a>
+                      <a href="./reviews/" style="margin-right: 20px; color: #FF6B35; font-weight: bold;">← Отзывы</a>
+                      <a href="./withdrawal/" style="color: #FF6B35; font-weight: bold;">Вывод →</a>
                   </div>
               </div>
           </body>
@@ -229,15 +262,15 @@
           <head>
               <meta charset="UTF-8">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/withdrawal/">
-              <title>Вывод денег из {{ item[1] | upper }} Casino</title>
+              <title>Вывод денег из {{ item[1] | upper }} Casino - 15-30 минут</title>
           </head>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
               <div style="max-width: 1200px; margin: 0 auto;">
                   <h1>Вывод денег из {{ item[1] | upper }} Casino</h1>
-                  <p>15-30 минут! СБП, Joker, карты, крипто - 0% комиссия!</p>
+                  <p>Быстрый вывод выигрышей из {{ item[1] | upper }} casino за 15-30 минут! СБП, Joker, карты, криптовалюта - все методы доступны. 0% комиссия!</p>
                   <div style="text-align: center; margin-top: 30px;">
-                      <a href="./bonus/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">← Бонусы</a>
-                      <a href="./" style="color: #FF6B35; font-weight: bold; text-decoration: none;">На главную →</a>
+                      <a href="./bonus/" style="margin-right: 20px; color: #FF6B35; font-weight: bold;">← Бонусы</a>
+                      <a href="./" style="color: #FF6B35; font-weight: bold;">На главную →</a>
                   </div>
               </div>
           </body>

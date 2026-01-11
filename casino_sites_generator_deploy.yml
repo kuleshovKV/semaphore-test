@@ -1,6 +1,6 @@
 ---
 - name: "🎰 CASINO SITES GENERATOR & DEPLOY - PRODUCTION"
-  hosts: production
+  hosts: all
   gather_facts: yes
   vars:
     work_dir: "/var/www/casino_generator"

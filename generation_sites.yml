@@ -1,16 +1,47 @@
 ---
 - hosts: all
   gather_facts: false
-  vars:
-    domains:
-      - casino400.ru
-      - casino401.ru
-    brands:
-      - pokerdom
-      - riobet
-      - pinco
-
+  
   tasks:
+    # Загружаем домены из CSV
+    - name: Load domains from CSV
+      slurp:
+        src: /root/domains.csv
+      register: domains_content
+      delegate_to: localhost
+      run_once: true
+
+    # Загружаем бренды из CSV
+    - name: Load brands from CSV
+      slurp:
+        src: /root/brands.csv
+      register: brands_content
+      delegate_to: localhost
+      run_once: true
+
+    # Преобразуем в список
+    - name: Set domains variable
+      set_fact:
+        domains: "{{ domains_content.content | b64decode | split('\n') | reject('equalto', '') | list }}"
+      run_once: true
+
+    - name: Set brands variable
+      set_fact:
+        brands: "{{ brands_content.content | b64decode | split('\n') | reject('equalto', '') | list }}"
+      run_once: true
+
+    # Проверяем загруженные данные
+    - name: Show loaded domains
+      debug:
+        msg: "✅ Loaded domains: {{ domains }}"
+      run_once: true
+
+    - name: Show loaded brands
+      debug:
+        msg: "✅ Loaded brands: {{ brands }}"
+      run_once: true
+
+    # Создаём директории
     - name: Create site directories
       file:
         path: "/var/www/{{ item[0] }}/{{ item[1] }}"
@@ -20,7 +51,8 @@
         mode: '0755'
       loop: "{{ domains | product(brands) | list }}"
 
-    - name: Generate perfect index.html (1200+ words, SEO optimized)
+    # ===== 1. INDEX.HTML =====
+    - name: Generate index.html
       copy:
         content: |
           <!DOCTYPE html>
@@ -29,48 +61,16 @@
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <meta name="robots" content="index, follow">
-              
-              <!-- SEO YANDEX SPECIFIC -->
-              <meta name="description" content="{{ item[1] | upper }} casino - играй онлайн, бонусы 50000 руб, вывод 24 часа, лицензия Curacao. Рейтинг 4.8★ от 5000+ игроков">
-              <meta name="keywords" content="casino online, {{ item[1] | upper }} casino, бонусы, слоты, игровые автоматы, лицензия, казино {{ item[1] | title }}">
-              
-              <!-- OPEN GRAPH ДЛЯ СОЦСЕТЕЙ -->
-              <meta property="og:title" content="{{ item[1] | upper }} Casino - онлайн казино с лучшими бонусами 50000 руб">
-              <meta property="og:description" content="Регистрируйся на {{ item[1] | upper }} casino и получи 50% бонус на первый депозит + 100 фриспинов">
+              <meta name="description" content="{{ item[1] | upper }} casino - играй онлайн, бонусы 50000 руб, вывод 24 часа, лицензия Curacao. Рейтинг 4.8★">
+              <meta name="keywords" content="casino online, {{ item[1] | upper }} casino, бонусы, слоты, игровые автоматы, лицензия">
+              <meta property="og:title" content="{{ item[1] | upper }} Casino - онлайн казино с лучшими бонусами">
+              <meta property="og:description" content="Регистрируйся на {{ item[1] | upper }} casino и получи 50% бонус на первый депозит">
               <meta property="og:url" content="https://{{ item[0] }}/{{ item[1] | lower }}/">
-              <meta property="og:type" content="website">
-              <meta property="og:image" content="https://{{ item[0] }}/{{ item[1] | lower }}/og-image.png">
-              
-              <!-- TWITTER CARDS -->
-              <meta name="twitter:card" content="summary_large_image">
-              <meta name="twitter:title" content="{{ item[1] | upper }} Casino - 50000 руб бонус">
-              <meta name="twitter:description" content="Играй в {{ item[1] | upper }} casino с лучшими условиями">
-              
-              <!-- CANONICAL -->
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/">
-              
-              <!-- SCHEMA.ORG (RICH SNIPPETS) -->
               <script type="application/ld+json">
-              {
-                "@context": "https://schema.org",
-                "@type": "Organization",
-                "name": "{{ item[1] | upper }} Casino",
-                "url": "https://{{ item[0] }}/{{ item[1] | lower }}/",
-                "logo": "https://{{ item[0] }}/logo.png",
-                "sameAs": [
-                  "https://vk.com/{{ item[1] | lower }}",
-                  "https://t.me/{{ item[1] | lower }}"
-                ],
-                "aggregateRating": {
-                  "@type": "AggregateRating",
-                  "ratingValue": "4.8",
-                  "ratingCount": "5000"
-                }
-              }
+              {"@context": "https://schema.org", "@type": "Organization", "name": "{{ item[1] | upper }} Casino", "url": "https://{{ item[0] }}/{{ item[1] | lower }}/", "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "5000"}}
               </script>
-              
               <title>{{ item[1] | upper }} Casino - 50000 руб бонус, лицензия Curacao, честные игры</title>
-              
               <style>
                   * { margin: 0; padding: 0; box-sizing: border-box; }
                   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; }
@@ -79,219 +79,206 @@
                   h2 { font-size: 1.8em; margin: 30px 0 15px 0; color: #2c3e50; border-bottom: 3px solid #FF6B35; padding-bottom: 10px; }
                   h3 { font-size: 1.4em; margin: 20px 0 10px 0; color: #34495e; }
                   p { margin: 15px 0; font-size: 1.1em; text-align: justify; line-height: 1.8; }
-                  .highlight { background: #FFF3CD; padding: 20px; border-left: 4px solid #FF6B35; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                  .cta-button { display: inline-block; background: #FF6B35; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 1.1em; margin: 10px 10px 10px 0; transition: all 0.3s; cursor: pointer; border: none; }
+                  .highlight { background: #FFF3CD; padding: 20px; border-left: 4px solid #FF6B35; margin: 20px 0; border-radius: 5px; }
+                  .cta-button { display: inline-block; background: #FF6B35; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 1.1em; margin: 10px 10px 10px 0; transition: all 0.3s; }
                   .cta-button:hover { background: #E55A25; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255,107,53,0.3); }
                   table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-radius: 5px; overflow: hidden; }
                   th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
                   th { background: #FF6B35; color: white; font-weight: bold; }
                   tr:hover { background: #f9f9f9; }
-                  .benefits-list { list-style: none; }
-                  .benefits-list li { padding: 10px 0; padding-left: 30px; position: relative; }
-                  .benefits-list li:before { content: "✅"; position: absolute; left: 0; color: #27ae60; font-weight: bold; }
-                  .review { background: white; padding: 20px; margin: 15px 0; border-left: 4px solid #FF6B35; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-                  .rating { color: #FF6B35; font-weight: bold; }
-                  ol, ul { margin-left: 20px; }
-                  li { margin: 10px 0; }
               </style>
           </head>
           <body>
               <div class="container">
-                  
                   <h1>🎰 {{ item[1] | upper }} Casino - Лучшее Онлайн Казино На {{ item[1] | title }}</h1>
                   
-                  <p><strong>{{ item[1] | upper }} casino</strong> — это премиальная игровая платформа, официально работающая на рынке с лицензией Curacao. Выбирая <strong>{{ item[1] | upper }} казино</strong>, вы выбираете надёжность, прозрачность и честную игру. На сайте <strong>{{ item[1] | upper }}</strong> доступны тысячи лицензионных слотов от лучших провайдеров мира. <strong>Казино {{ item[1] | upper }}</strong> гарантирует быстрый вывод выигрышей и качественную поддержку 24/7.</p>
+                  <p><strong>{{ item[1] | upper }} casino</strong> — это премиальная игровая платформа, официально работающая на рынке с лицензией Curacao. Выбирая <strong>{{ item[1] | upper }} казино</strong>, вы выбираете надёжность, прозрачность и честную игру. На сайте <strong>{{ item[1] | upper }}</strong> доступны тысячи лицензионных слотов от лучших провайдеров мира, включая NetEnt, Microgaming, Play'n GO и других. <strong>Казино {{ item[1] | upper }}</strong> гарантирует быстрый вывод выигрышей в течение 15-30 минут и качественную поддержку клиентов 24/7 на русском языке.</p>
                   
-                  <p>Платформа <strong>{{ item[1] | title }} casino</strong> предлагает самые выгодные условия для новых игроков. Бонусная система казино <strong>{{ item[1] | upper }}</strong> разработана для максимальной выгоды. На казино {{ item[1] | title }} действует 100% приветственный бонус до 50,000 рублей и 100 фриспинов.</p>
+                  <p>Платформа <strong>{{ item[1] | title }} casino</strong> предлагает самые выгодные условия для новых игроков на рынке. Бонусная система казино <strong>{{ item[1] | upper }}</strong> разработана таким образом, чтобы каждый игрок получил максимальную выгоду от своего первого визита. На казино {{ item[1] | title }} действует щедрый 100% приветственный бонус до 50,000 рублей, а также дополнительные 100 фриспинов на самые популярные слоты от топовых провайдеров.</p>
                   
                   <div class="highlight">
                       <strong>🎁 РЕГИСТРИРУЙСЯ ПРЯМО СЕЙЧАС И ПОЛУЧИ:</strong>
-                      <ul class="benefits-list">
-                          <li>100% бонус на первый депозит до 50,000 рублей</li>
-                          <li>100 фриспинов на популярные слоты</li>
-                          <li>Вывод выигрышей за 15-30 минут</li>
-                          <li>Защита данных SSL 256-bit</li>
-                          <li>Поддержка на русском 24/7</li>
+                      <ul style="margin-left: 20px;">
+                          <li>✅ 100% бонус на первый депозит до 50,000 рублей</li>
+                          <li>✅ 100 фриспинов на популярные слоты</li>
+                          <li>✅ Вывод выигрышей за 15-30 минут</li>
+                          <li>✅ Защита данных SSL 256-bit</li>
+                          <li>✅ Поддержка на русском языке 24/7</li>
                       </ul>
                       <a href="./register/" class="cta-button">→ Зарегистрироваться и Получить 50,000 Бонуса</a>
                   </div>
                   
                   <h2>Почему Выбирают {{ item[1] | upper }} Casino?</h2>
-                  
-                  <p><strong>{{ item[1] | upper }} казино</strong> завоевало доверие тысяч игроков благодаря честной игре и щедрым бонусам. На платформе <strong>{{ item[1] | upper }} casino</strong> используется сертифицированный RNG (генератор случайных чисел), что гарантирует честность всех игр. Лицензия Curacao подтверждает легальность работы казино <strong>{{ item[1] | upper }}</strong>.</p>
-                  
-                  <p>Казино <strong>{{ item[1] | title }}</strong> проходит регулярные аудиты независимых органов. Все игровые автоматы в {{ item[1] | upper }} casino сертифицированы и проверены. Система защиты данных на казино {{ item[1] | title }} соответствует международным стандартам PCI DSS.</p>
+                  <p><strong>{{ item[1] | upper }} казино</strong> завоевало доверие тысяч игроков благодаря честной игре и щедрым бонусам. На платформе <strong>{{ item[1] | upper }} casino</strong> используется сертифицированный RNG (генератор случайных чисел), что гарантирует честность всех игр. Лицензия Curacao eGaming подтверждает легальность работы казино <strong>{{ item[1] | upper }}</strong> на международном уровне.</p>
                   
                   <table>
-                      <thead>
-                          <tr>
-                              <th>Параметр</th>
-                              <th>Значение</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          <tr>
-                              <td>📜 Лицензия</td>
-                              <td>Curacao eGaming (официальная) ✅</td>
-                          </tr>
-                          <tr>
-                              <td>🎰 Игровые автоматы</td>
-                              <td>7200+ слотов от NetEnt, Microgaming, Play'n GO</td>
-                          </tr>
-                          <tr>
-                              <td>💳 Минимальный депозит</td>
-                              <td>100 рублей (все методы)</td>
-                          </tr>
-                          <tr>
-                              <td>⚡ Вывод средств</td>
-                              <td>15-30 минут (рабочее время), до утра (ночью)</td>
-                          </tr>
-                          <tr>
-                              <td>🎁 Приветственный бонус</td>
-                              <td>100% до 50,000 руб + 100 FS</td>
-                          </tr>
-                          <tr>
-                              <td>💬 Поддержка</td>
-                              <td>24/7 через чат, email, Telegram</td>
-                          </tr>
-                      </tbody>
-                  </table>
-                  
-                  <h2>Как Начать Играть На {{ item[1] | upper }}?</h2>
-                  
-                  <p>Начать игру на <strong>{{ item[1] | upper }} casino</strong> очень просто. Процесс регистрации займёт всего 90 секунд. После создания аккаунта на казино <strong>{{ item[1] | upper }}</strong> вы получите доступ к полной библиотеке игр и специальным бонусам. Вход в <strong>{{ item[1] | upper }} kazino</strong> доступен через любое устройство - компьютер, планшет или смартфон.</p>
-                  
-                  <h3>5 шагов для регистрации:</h3>
-                  <ol>
-                      <li><strong>Нажмите кнопку "Регистрация"</strong> на сайте {{ item[1] | upper }} casino</li>
-                      <li><strong>Введите email и пароль</strong> для доступа к аккаунту</li>
-                      <li><strong>Укажите основные данные</strong> (имя, телефон, дата рождения)</li>
-                      <li><strong>Пополните счёт</strong> на сумму от 100 рублей любым удобным способом</li>
-                      <li><strong>Получите бонус</strong> и начните играть в слоты {{ item[1] | upper }} казино</li>
-                  </ol>
-                  
-                  <a href="./register/" class="cta-button">✅ Зарегистрироваться На {{ item[1] | upper }} Casino</a>
-                  
-                  <h2>Бонусы На {{ item[1] | upper }} Casino</h2>
-                  
-                  <p><strong>{{ item[1] | upper }} casino</strong> предлагает один из самых щедрых приветственных пакетов на рынке. Бонусы {{ item[1] | upper }} казино разработаны для максимизации удовольствия от игры и увеличения банкролла новичков.</p>
-                  
-                  <table>
-                      <thead>
-                          <tr>
-                              <th>🎁 Тип Бонуса</th>
-                              <th>💰 Условия</th>
-                              <th>📊 Особенности</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          <tr>
-                              <td><strong>Приветственный пакет</strong></td>
-                              <td>3 депозита, вейджер 30x</td>
-                              <td>150 FS на первый депозит, до 50,000 руб</td>
-                          </tr>
-                          <tr>
-                              <td><strong>Кэшбэк</strong></td>
-                              <td>Еженедельно</td>
-                              <td>От 7% на проигрыши, без вейджера</td>
-                          </tr>
-                          <tr>
-                              <td><strong>Фриспины</strong></td>
-                              <td>По акциям</td>
-                              <td>Бесплатные вращения в популярных слотах</td>
-                          </tr>
-                          <tr>
-                              <td><strong>VIP программа</strong></td>
-                              <td>Постоянно</td>
-                              <td>1 балл за каждые 150 руб ставок, премии</td>
-                          </tr>
-                      </tbody>
+                      <tr><th>Параметр</th><th>{{ item[1] | upper }} Casino</th></tr>
+                      <tr><td>📜 Лицензия</td><td>Curacao eGaming (официальная) ✅</td></tr>
+                      <tr><td>🎰 Игровые автоматы</td><td>7200+ слотов от NetEnt, Microgaming, Play'n GO</td></tr>
+                      <tr><td>💳 Минимальный депозит</td><td>100 рублей (все методы платежа)</td></tr>
+                      <tr><td>⚡ Вывод средств</td><td>15-30 минут (рабочее время), до утра (ночью)</td></tr>
+                      <tr><td>🎁 Приветственный бонус</td><td>100% до 50,000 руб + 100 FS</td></tr>
+                      <tr><td>💬 Служба поддержки</td><td>24/7 через чат, email, Telegram, телефон</td></tr>
                   </table>
                   
                   <h2>Способы Пополнения На {{ item[1] | upper }} Казино</h2>
-                  
-                  <p>На платформе <strong>{{ item[1] | upper }} casino</strong> доступны все популярные способы платежа. Все операции в казино <strong>{{ item[1] | upper }}</strong> защищены современным шифрованием и страхованием. Вывод выигрышей из <strong>{{ item[1] | upper }} казино</strong> происходит быстро и безопасно.</p>
-                  
                   <table>
-                      <thead>
-                          <tr>
-                              <th>💳 Метод</th>
-                              <th>💰 Мин. сумма</th>
-                              <th>⚡ Скорость</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          <tr>
-                              <td>СБП (Система быстрых платежей)</td>
-                              <td>1,500 руб</td>
-                              <td>Мгновенно</td>
-                          </tr>
-                          <tr>
-                              <td>Joker Wallet</td>
-                              <td>150 руб</td>
-                              <td>5-10 мин</td>
-                          </tr>
-                          <tr>
-                              <td>Банковская карта</td>
-                              <td>100 руб</td>
-                              <td>15-30 мин</td>
-                          </tr>
-                          <tr>
-                              <td>Криптовалютa (USDT, BTC)</td>
-                              <td>15 EUR</td>
-                              <td>5-15 мин</td>
-                          </tr>
-                      </tbody>
+                      <tr><th>💳 Метод</th><th>💰 Мин. сумма</th><th>⚡ Скорость</th></tr>
+                      <tr><td>СБП</td><td>1,500 руб</td><td>Мгновенно</td></tr>
+                      <tr><td>Joker Wallet</td><td>150 руб</td><td>5-10 мин</td></tr>
+                      <tr><td>Банковская карта</td><td>100 руб</td><td>15-30 мин</td></tr>
+                      <tr><td>Криптовалюта (USDT, BTC)</td><td>15 EUR</td><td>5-15 мин</td></tr>
                   </table>
                   
-                  <h2>Отзывы Игроков О {{ item[1] | upper }} Casino</h2>
-                  
-                  <p>⭐⭐⭐⭐⭐ <strong>Рейтинг: 4.8/5.0</strong> на основе 5000+ отзывов</p>
-                  
-                  <div class="review">
-                      <strong>Иван К. - Москва</strong><br>
-                      "Выиграл 250,000 рублей за месяц на слотах {{ item[1] | upper }} casino. Вывод прошёл за 20 минут без проблем. Лучшее казино из всех, что пробовал! <span class="rating">★★★★★</span>"
-                  </div>
-                  
-                  <div class="review">
-                      <strong>Мария П. - Санкт-Петербург</strong><br>
-                      "Регистрировалась на {{ item[1] | upper }} казино, получила 50,000 рублей бонуса и 100 фриспинов. Поддержка очень помогла разобраться с условиями. <span class="rating">★★★★★</span>"
-                  </div>
-                  
-                  <div class="review">
-                      <strong>Алексей Р. - Казань</strong><br>
-                      "Играю на {{ item[1] | upper }} casino уже 2 года. Игры честные, выплаты всегда вовремя, поддержка работает 24/7. Рекомендую! <span class="rating">★★★★★</span>"
-                  </div>
-                  
-                  <h2>Служба Поддержки {{ item[1] | upper }} Casino</h2>
-                  
-                  <p>Команда поддержки казино <strong>{{ item[1] | upper }}</strong> работает круглосуточно, чтобы помочь вам с любыми вопросами. На платформе <strong>{{ item[1] | upper }} casino</strong> доступны несколько каналов связи с оператором.</p>
-                  
-                  <ul>
-                      <li>💬 <strong>Онлайн чат</strong> - ответ за 1-2 минуты</li>
-                      <li>📧 <strong>Email</strong> - ответ за 1 час</li>
-                      <li>📱 <strong>Telegram</strong> - ответ за 5-10 минут</li>
-                      <li>☎️ <strong>Телефон</strong> - доступен в рабочее время</li>
-                  </ul>
-                  
-                  <a href="./register/" class="cta-button">🚀 Начните Игру На {{ item[1] | upper }} Casino Прямо Сейчас!</a>
-                  
                   <div style="margin-top: 40px; padding: 20px; background: #f0f0f0; border-radius: 5px; text-align: center;">
+                      <a href="./" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">→ Главная</a>
                       <a href="./register/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">→ Регистрация</a>
                       <a href="./reviews/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">→ Отзывы</a>
+                      <a href="./bonus/" style="margin-right: 20px; color: #FF6B35; font-weight: bold; text-decoration: none;">→ Бонусы</a>
                       <a href="./withdrawal/" style="color: #FF6B35; font-weight: bold; text-decoration: none;">→ Вывод средств</a>
                   </div>
                   
                   <p style="margin-top: 40px; font-size: 0.9em; color: #999; text-align: center;">
-                      ⚠️ Материал предназначен для лиц старше 18 лет. 
-                      {{ item[1] | upper }} Casino имеет лицензию Curacao № 365/JAZ. 
-                      Играйте ответственно. Возможны риски. 
-                      При наличии признаков игровой зависимости обратитесь к специалисту.
+                      ⚠️ Материал предназначен для лиц старше 18 лет. {{ item[1] | upper }} Casino имеет лицензию Curacao № 365/JAZ. Играйте ответственно.
                   </p>
               </div>
           </body>
           </html>
         dest: "/var/www/{{ item[0] }}/{{ item[1] }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      loop: "{{ domains | product(brands) | list }}"
+
+    # ===== 2. REGISTER.HTML =====
+    - name: Generate register.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="description" content="Регистрация в {{ item[1] | upper }} casino - быстро, безопасно, 50000 руб бонуса">
+              <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/register/">
+              <title>Регистрация в {{ item[1] | upper }} Casino - получи 50000 руб бонуса</title>
+              <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+                  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+                  h1 { font-size: 2.5em; margin: 20px 0; }
+                  .nav a { margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>Регистрация в {{ item[1] | upper }} Casino</h1>
+                  <p>Регистрация в казино {{ item[1] | upper }} займет всего 90 секунд. Получите 50,000 рублей бонуса и 100 фриспинов!</p>
+                  <ol style="margin-left: 20px;">
+                      <li>Нажмите "Создать аккаунт" на сайте {{ item[1] | upper }} casino</li>
+                      <li>Введите email и пароль</li>
+                      <li>Укажите личные данные</li>
+                      <li>Пополните счёт от 100 рублей</li>
+                      <li>Получите бонус в {{ item[1] | upper }} casino!</li>
+                  </ol>
+                  <div class="nav" style="text-align: center; margin-top: 30px;">
+                      <a href="./">← Главная</a>
+                      <a href="./reviews/">Отзывы →</a>
+                  </div>
+              </div>
+          </body>
+          </html>
+        dest: "/var/www/{{ item[0] }}/{{ item[1] }}/register/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      loop: "{{ domains | product(brands) | list }}"
+
+    # ===== 3. REVIEWS.HTML =====
+    - name: Generate reviews.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="description" content="Отзывы о {{ item[1] | upper }} casino - 4.8★ от 5000+ игроков">
+              <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/reviews/">
+              <title>Отзывы о {{ item[1] | upper }} Casino - 4.8★</title>
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+              <div style="max-width: 1200px; margin: 0 auto;">
+                  <h1>Отзывы о {{ item[1] | upper }} Casino</h1>
+                  <p>⭐⭐⭐⭐⭐ Рейтинг: 4.8/5.0 на основе 5000+ отзывов</p>
+                  <div style="background: white; padding: 20px; margin: 15px 0; border-left: 4px solid #FF6B35;">
+                      <strong>Иван К. - Москва</strong><br>
+                      "Выиграл 250,000 рублей в {{ item[1] | upper }} casino! Вывод за 20 минут. ★★★★★"
+                  </div>
+                  <div style="text-align: center; margin-top: 30px;">
+                      <a href="./bonus/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">← Бонусы</a>
+                      <a href="./withdrawal/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">Вывод →</a>
+                  </div>
+              </div>
+          </body>
+          </html>
+        dest: "/var/www/{{ item[0] }}/{{ item[1] }}/reviews/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      loop: "{{ domains | product(brands) | list }}"
+
+    # ===== 4. BONUS.HTML =====
+    - name: Generate bonus.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="description" content="Бонусы в {{ item[1] | upper }} casino - 100% до 50000 руб">
+              <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/bonus/">
+              <title>Бонусы в {{ item[1] | upper }} Casino</title>
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+              <div style="max-width: 1200px; margin: 0 auto;">
+                  <h1>Бонусы в {{ item[1] | upper }} Casino</h1>
+                  <p>{{ item[1] | upper }} casino предлагает щедрые бонусы: 100% до 50,000 рублей + 100 фриспинов!</p>
+                  <div style="text-align: center; margin-top: 30px;">
+                      <a href="./reviews/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">← Отзывы</a>
+                      <a href="./withdrawal/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">Вывод →</a>
+                  </div>
+              </div>
+          </body>
+          </html>
+        dest: "/var/www/{{ item[0] }}/{{ item[1] }}/bonus/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      loop: "{{ domains | product(brands) | list }}"
+
+    # ===== 5. WITHDRAWAL.HTML =====
+    - name: Generate withdrawal.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="description" content="Вывод денег из {{ item[1] | upper }} casino - 15-30 минут">
+              <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] | lower }}/withdrawal/">
+              <title>Вывод денег из {{ item[1] | upper }} Casino</title>
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+              <div style="max-width: 1200px; margin: 0 auto;">
+                  <h1>Вывод денег из {{ item[1] | upper }} Casino</h1>
+                  <p>Вывод выигрышей за 15-30 минут! СБП, Joker, карты, крипто - все методы доступны.</p>
+                  <div style="text-align: center; margin-top: 30px;">
+                      <a href="./bonus/" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">← Бонусы</a>
+                      <a href="./" style="margin: 0 15px; color: #FF6B35; text-decoration: none; font-weight: bold;">На главную →</a>
+                  </div>
+              </div>
+          </body>
+          </html>
+        dest: "/var/www/{{ item[0] }}/{{ item[1] }}/withdrawal/index.html"
         owner: www-data
         group: www-data
         mode: '0644'

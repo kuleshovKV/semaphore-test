@@ -1,0 +1,184 @@
+---
+- name: "🎰 CASINO SITES GENERATOR & DEPLOY - PRODUCTION"
+  hosts: production
+  gather_facts: yes
+  vars:
+    work_dir: "/var/www/casino_generator"
+    output_dir: "/var/www"
+
+  tasks:
+    - name: "📋 Display Deployment Info"
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════╗
+          ║ 🎰 CASINO SITES GENERATOR & DEPLOY v3.0 ║
+          ║ ║
+          ║ Server: {{ inventory_hostname }}
+          ║ Work dir: {{ work_dir }}
+          ║ Output: {{ output_dir }}
+          ║ Date: {{ ansible_date_time.iso8601 }}
+          ╚════════════════════════════════════════════════════════╝
+
+    - name: "📁 Create work directories"
+      file:
+        path: "{{ work_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - templates
+        - output
+        - logs
+
+    - name: "📥 Clone/update git repository"
+      git:
+        repo: "https://github.com/kuleshovKV/semaphore-test.git"
+        dest: "{{ work_dir }}"
+        version: master
+        force: yes
+      register: git_clone
+
+    - name: "📊 Display git status"
+      debug:
+        msg: "✅ Git: {{ git_clone.changed | ternary('Updated', 'Already up to date') }}"
+
+    - name: "📥 Read domains.csv"
+      slurp:
+        src: "{{ work_dir }}/domains.csv"
+      register: domains_content
+
+    - name: "📥 Read brands.csv"
+      slurp:
+        src: "{{ work_dir }}/brands.csv"
+      register: brands_content
+
+    - name: "📥 Read ref_links.conf"
+      slurp:
+        src: "{{ work_dir }}/ref_links.conf"
+      register: refs_content
+
+    - name: "🔍 Parse configuration"
+      set_fact:
+        domains: "{{ domains_content['content'] | b64decode | split('\n') | select('match', '^[a-z]') | list }}"
+        brands: "{{ brands_content['content'] | b64decode | split('\n') | select('match', '^[a-z]') | list }}"
+        refs_raw: "{{ refs_content['content'] | b64decode | split('\n') | select('match', '^[a-z]') | list }}"
+
+    - name: "✅ Display parsed data"
+      debug:
+        msg: |
+          ✅ Parsed configuration:
+          📋 Domains: {{ domains | length }} entries
+          🎯 Brands: {{ brands | length }} entries
+          🔗 Ref links: {{ refs_raw | length }} entries
+
+    - name: "🔧 Generate HTML template"
+      shell: |
+        cd {{ work_dir }}
+        sh index.html.tpl_FULL.sh > /tmp/template_gen.log 2>&1
+      register: template_gen
+      ignore_errors: yes
+
+    - name: "✅ Verify template"
+      stat:
+        path: "{{ work_dir }}/templates/index.html.tpl"
+      register: template_stat
+
+    - name: "📊 Display template info"
+      debug:
+        msg: |
+          ✅ Template generated
+          📊 Size: {{ (template_stat.stat.size / 1024) | round(1) }} KB
+          ✨ Ready for generation
+
+    - name: "🔧 Create generation script"
+      shell: |
+        cat > {{ work_dir }}/generate_sites.sh << 'GENEOF'
+        #!/bin/sh
+        cd {{ work_dir }}
+        
+        echo "🎰 Starting generation for {{ domains | length }} domains × {{ brands | length }} brands..."
+        
+        {% for domain in domains %}
+        {% set domain_name = domain.strip() %}
+        {% for brand in brands %}
+        {% set brand_name = brand.strip() %}
+        
+        SITE_DIR="{{ output_dir }}/{{ brand_name }}casino.{{ domain_name }}"
+        mkdir -p "$SITE_DIR"/{register,bonus,reviews,withdrawal}
+        
+        # Main page
+        sed "s|BRAND|{{ brand_name }}|g; s|DOMAIN|{{ domain_name }}|g" templates/index.html.tpl > "$SITE_DIR/index.html"
+        
+        # Subpages
+        sed "s|BRAND|{{ brand_name }}|g; s|DOMAIN|{{ domain_name }}|g; s|PAGE|register|g" templates/index.html.tpl > "$SITE_DIR/register/index.html"
+        sed "s|BRAND|{{ brand_name }}|g; s|DOMAIN|{{ domain_name }}|g; s|PAGE|bonus|g" templates/index.html.tpl > "$SITE_DIR/bonus/index.html"
+        sed "s|BRAND|{{ brand_name }}|g; s|DOMAIN|{{ domain_name }}|g; s|PAGE|reviews|g" templates/index.html.tpl > "$SITE_DIR/reviews/index.html"
+        sed "s|BRAND|{{ brand_name }}|g; s|DOMAIN|{{ domain_name }}|g; s|PAGE|withdrawal|g" templates/index.html.tpl > "$SITE_DIR/withdrawal/index.html"
+        
+        # Static files
+        echo "User-agent: *" > "$SITE_DIR/robots.txt"
+        echo "Disallow: /admin" >> "$SITE_DIR/robots.txt"
+        echo "Allow: /" >> "$SITE_DIR/robots.txt"
+        
+        echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" > "$SITE_DIR/sitemap.xml"
+        echo "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" >> "$SITE_DIR/sitemap.xml"
+        echo "  <url><loc>https://{{ brand_name }}casino.{{ domain_name }}/</loc></url>" >> "$SITE_DIR/sitemap.xml"
+        echo "  <url><loc>https://{{ brand_name }}casino.{{ domain_name }}/register/</loc></url>" >> "$SITE_DIR/sitemap.xml"
+        echo "  <url><loc>https://{{ brand_name }}casino.{{ domain_name }}/bonus/</loc></url>" >> "$SITE_DIR/sitemap.xml"
+        echo "  <url><loc>https://{{ brand_name }}casino.{{ domain_name }}/reviews/</loc></url>" >> "$SITE_DIR/sitemap.xml"
+        echo "  <url><loc>https://{{ brand_name }}casino.{{ domain_name }}/withdrawal/</loc></url>" >> "$SITE_DIR/sitemap.xml"
+        echo "</urlset>" >> "$SITE_DIR/sitemap.xml"
+        
+        echo "✅ Generated: {{ brand_name }}casino.{{ domain_name }}"
+        {% endfor %}
+        {% endfor %}
+        
+        echo "✅ Total generated: {{ (domains | length) * (brands | length) }} sites"
+        GENEOF
+        
+        chmod +x {{ work_dir }}/generate_sites.sh
+      args:
+        executable: /bin/sh
+
+    - name: "🚀 Run generation script"
+      shell: "sh {{ work_dir }}/generate_sites.sh"
+      register: generation_output
+
+    - name: "✅ Display generation output"
+      debug:
+        msg: "{{ generation_output.stdout }}"
+
+    - name: "📁 Count generated files"
+      find:
+        paths: "{{ output_dir }}"
+        patterns: "index.html"
+        recurse: yes
+      register: html_files
+
+    - name: "📊 Display verification"
+      debug:
+        msg: |
+          ✅ Generation Results:
+          📁 Total HTML files: {{ html_files.matched }}
+          📦 Location: {{ output_dir }}
+          🎯 Ready for production
+
+    - name: "✅ Set correct permissions"
+      file:
+        path: "{{ output_dir }}"
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        recurse: yes
+
+    - name: "🎉 Deployment Complete"
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════╗
+          ║ ✅ DEPLOYMENT COMPLETED! ║
+          ║ ║
+          ║ 📊 HTML Files: {{ html_files.matched }}
+          ║ 📁 Location: {{ output_dir }}
+          ║ 👤 Owner: www-data:www-data
+          ║ ║
+          ║ 🚀 Production Ready! ║
+          ╚════════════════════════════════════════════════════════╝

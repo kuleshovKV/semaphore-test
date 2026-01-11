@@ -328,3 +328,26 @@
           ║                                                        ║
           ║  🚀 Ready for production deployment!                  ║
           ╚════════════════════════════════════════════════════════╝
+
+    - name: "📤 STEP 5: Commit Generated Sites to Git"
+      block:
+        - name: "Copy output to repo root"
+          shell: |
+            cp -r {{ work_dir }}/output/* {{ work_dir }}/
+            find . -maxdepth 1 -type d -name "*casino*" -o -name "*.ru" | head -10
+
+        - name: "Git add generated sites"
+          shell: |
+            cd {{ work_dir }}
+            git add -A
+            git status
+
+        - name: "Git commit with timestamp"
+          shell: |
+            cd {{ work_dir }}
+            git commit -m "Generated: $(date +%Y-%m-%d_%H:%M:%S) - 6 sites × 5 pages each" || true
+            git log --oneline -1
+
+        - name: "Display git status"
+          debug:
+            msg: "✅ Generated sites committed to Git"

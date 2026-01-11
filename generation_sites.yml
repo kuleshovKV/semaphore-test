@@ -135,16 +135,6 @@
               <meta property="og:url" content="https://{{ item[0] }}/{{ item[1] }}/">
               <meta name="twitter:card" content="summary_large_image">
               <title>{{ item[1] | upper }} Casino - играй в казино онлайн, бонусы на {{ item[1] | title }}</title>
-    <!-- Yandex.Metrica -->
-    <script type="text/javascript">
-    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-    m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],
-    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-    ym(98765432, "init", {clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/98765432" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrica -->
               <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-weight='bold' fill='%2300FF88'>{# Цвет по первой букве #}</text></svg>">
               <style>
                   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -241,16 +231,6 @@
               <meta name="keywords" content="казино онлайн, {{ item[1] | upper }} casino, бонусы 50000, игровые автоматы, слоты, {{ item[1] | title }}, лицензия Curacao">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] }}/">
               <title>Регистрация в {{ item[1] | upper }} Casino - бонус 50,000 руб на {{ item[1] | title }}</title>
-    <!-- Yandex.Metrica -->
-    <script type="text/javascript">
-    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-    m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],
-    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-    ym(98765432, "init", {clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/98765432" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrica -->
               <style>
                   body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
                   .container { max-width: 600px; margin: 50px auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 8px 32px rgba(31,38,135,0.37); }
@@ -317,16 +297,6 @@
               <meta name="keywords" content="казино онлайн, {{ item[1] | upper }} casino, бонусы 50000, игровые автоматы, слоты, {{ item[1] | title }}, лицензия Curacao">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] }}/">
               <title>Вывод денег из {{ item[1] | upper }} Casino - все способы на {{ item[1] | title }}</title>
-    <!-- Yandex.Metrica -->
-    <script type="text/javascript">
-    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-    m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],
-    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-    ym(98765432, "init", {clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/98765432" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrica -->
               <style>
                   body { font-family: Arial, sans-serif; background: #f0f0f0; }
                   .container { max-width: 700px; margin: 30px auto; background: white; padding: 30px; border-radius: 8px; }
@@ -393,16 +363,6 @@
               <meta name="keywords" content="казино онлайн, {{ item[1] | upper }} casino, бонусы 50000, игровые автоматы, слоты, {{ item[1] | title }}, лицензия Curacao">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] }}/">
               <title>Отзывы о {{ item[1] | upper }} Casino - что говорят игроки на {{ item[1] | title }}</title>
-    <!-- Yandex.Metrica -->
-    <script type="text/javascript">
-    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-    m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],
-    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-    ym(98765432, "init", {clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/98765432" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrica -->
               <style>
                   body { font-family: Arial, sans-serif; background: #f0f0f0; }
                   .container { max-width: 700px; margin: 30px auto; background: white; padding: 30px; border-radius: 8px; }
@@ -468,16 +428,6 @@
               <meta name="keywords" content="казино онлайн, {{ item[1] | upper }} casino, бонусы 50000, игровые автоматы, слоты, {{ item[1] | title }}, лицензия Curacao">
               <link rel="canonical" href="https://{{ item[0] }}/{{ item[1] }}/">
               <title>FAQ - Часто задаваемые вопросы о {{ item[1] | upper }} на {{ item[1] | title }}</title>
-    <!-- Yandex.Metrica -->
-    <script type="text/javascript">
-    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-    m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],
-    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-    ym(98765432, "init", {clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/98765432" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrica -->
               <style>
                   body { font-family: Arial, sans-serif; background: #f0f0f0; }
                   .container { max-width: 700px; margin: 30px auto; background: white; padding: 30px; border-radius: 8px; }

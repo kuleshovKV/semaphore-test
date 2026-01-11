@@ -9,7 +9,7 @@
   gather_facts: yes
   
   vars:
-    work_dir: "/root"
+    work_dir: "{{ playbook_dir }}"
     domains_file: "domains.csv"
     brands_file: "brands.csv"
     refs_file: "ref_links.conf"

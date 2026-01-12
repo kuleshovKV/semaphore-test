@@ -28,7 +28,7 @@
     - name: "Add domains to Cloudflare"
       shell: |
         while IFS= read -r domain; do
-          [ -z "$domain\" ] && continue
+          [ -z "$domain" ] && continue
 
           echo "Checking ${domain}..."
 
@@ -54,7 +54,7 @@
           else
             echo "  ${domain}: exists"
           fi
-        done <<< \"$(cat '{{ domains_file }}')\"
+        done <<< "$(cat '{{ domains_file }}')"
       register: add_result
 
     - debug:
@@ -77,7 +77,7 @@
           echo "${domain},${zone_id}" >> /tmp/zone_mapping.txt
           echo "ZONE: ${domain} = ${zone_id}"
           sleep 1
-        done <<< \"$(cat '{{ domains_file }}')\"
+        done <<< "$(cat '{{ domains_file }}')"
       register: mapping
 
     - debug:
@@ -147,7 +147,7 @@
               -H "Content-Type: application/json" \
               -d "{\"type\":\"A\",\"name\":\"${full}\",\"content\":\"${ip}\",\"ttl\":1,\"proxied\":true}" > /dev/null 2>&1
             echo "  sub: ${full} -> ${ip}" >> /tmp/dns_records_created.txt
-          done <<< \"$(cat '{{ subdomains_file }}')\"
+          done <<< "$(cat '{{ subdomains_file }}')"
 
           echo "" >> /tmp/dns_records_created.txt
         done < /tmp/zone_mapping.txt

@@ -1,13 +1,13 @@
 #!/bin/bash
 set -e
 
-WORK_ROOT="/var/www"
-CONFIG_DIR="/var/www/casino_generator"
+GEN_DIR="/var/www/casino_generator"   # сюда git клонирует репозиторий
+WORK_ROOT="/var/www"                  # корень доменов
 
-DOMAINS_FILE="$CONFIG_DIR/domains.csv"
-SUBDOMAINS_FILE="$CONFIG_DIR/subdomains.csv"
-REFS_FILE="$CONFIG_DIR/ref_links.conf"
-TEMPLATE="$CONFIG_DIR/templates/index.html.tpl"
+DOMAINS_FILE="$GEN_DIR/domains.csv"
+SUBDOMAINS_FILE="$GEN_DIR/subdomains.csv"
+REFS_FILE="$GEN_DIR/ref_links.conf"
+TEMPLATE="$GEN_DIR/templates/index.html.tpl"
 
 declare -A REFS
 

@@ -1,0 +1,33 @@
+---
+- name: "🎰 CASINO SITES GENERATOR & DEPLOY - PRODUCTION"
+  hosts: all
+  gather_facts: yes
+  vars:
+    generator_dir: "/var/www/casino_generator"
+
+  tasks:
+    - name: "📁 Ensure generator dir exists"
+      file:
+        path: "{{ generator_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "📥 Clone/update git repository"
+      git:
+        repo: "git@github.com:kuleshovKV/semaphore-test.git"
+        dest: "{{ generator_dir }}"
+        version: master
+        force: yes
+
+    - name: "🔧 Ensure generate_sites.sh is executable"
+      file:
+        path: "{{ generator_dir }}/generate_sites.sh"
+        mode: '0755'
+
+    - name: "🚀 Run generation script"
+      shell: "cd {{ generator_dir }} && ./generate_sites.sh"
+      register: generation_output
+
+    - name: "✅ Show generation result"
+      debug:
+        msg: "{{ generation_output.stdout }}"

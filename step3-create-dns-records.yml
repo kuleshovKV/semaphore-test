@@ -1,0 +1,59 @@
+---
+- name: "🌐 STEP 3: Create A Records (Wildcard + Subdomain)"
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: "Read zone mapping"
+      shell: "cat /tmp/zone_mapping.txt"
+      register: zone_mapping_raw
+
+    - name: "Parse zones"
+      set_fact:
+        zone_pairs: "{{ zone_mapping_raw.stdout_lines | map('split', ',') | list }}"
+
+    - name: "Create *.domain A record"
+      shell: |
+        DOMAIN="{{ item[0] }}"
+        ZONE_ID="{{ item[1] }}"
+        IP="{{ ansible_default_ipv4.address }}"
+        
+        curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" \
+          -d "{\"type\":\"A\",\"name\":\"*.${DOMAIN}\",\"content\":\"${IP}\",\"ttl\":1,\"proxied\":true}" > /tmp/a_wildcard_{{ loop.index }}.txt 2>&1
+      register: wildcard_response
+      loop: "{{ zone_pairs }}"
+      delay: 0.5
+      ignore_errors: yes
+
+    - name: "Create sykaaa.domain A record"
+      shell: |
+        DOMAIN="{{ item[0] }}"
+        ZONE_ID="{{ item[1] }}"
+        IP="{{ ansible_default_ipv4.address }}"
+        
+        curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" \
+          -d "{\"type\":\"A\",\"name\":\"sykaaa.${DOMAIN}\",\"content\":\"${IP}\",\"ttl\":1,\"proxied\":true}" > /tmp/a_sykaaa_{{ loop.index }}.txt 2>&1
+      register: subdomain_response
+      loop: "{{ zone_pairs }}"
+      delay: 0.5
+      ignore_errors: yes
+
+    - name: "Display A records created"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          ✅ STEP 3: A RECORDS CREATED
+          ═══════════════════════════════════════════
+          {% for i, item in enumerate(zone_pairs) %}
+          Domain: {{ item[0] }} (Zone: {{ item[1] }})
+          Records created:
+            ✓ *.{{ item[0] }} → {{ ansible_default_ipv4.address }}
+            ✓ sykaaa.{{ item[0] }} → {{ ansible_default_ipv4.address }}
+          {% endfor %}
+          ═══════════════════════════════════════════

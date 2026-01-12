@@ -1,0 +1,40 @@
+---
+- name: "☁️ STEP 2: Get Zone IDs"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Read domains"
+      shell: "cat /tmp/domains_list.txt"
+      register: domains_raw
+
+    - name: "Query Cloudflare"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name={{ item }}" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" | \
+          python3 -c "import sys, json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') else 'NOT_FOUND')" 2>/dev/null
+      register: zone_ids_raw
+      loop: "{{ domains_raw.stdout_lines }}"
+      delay: 0.5
+      ignore_errors: yes
+
+    - name: "Save Zone IDs"
+      shell: |
+        cat > /tmp/zone_mapping.txt << 'CSV_END'
+        {% for i, domain in enumerate(domains_raw.stdout_lines) %}
+        {{ domain }},{{ zone_ids_raw.results[i].stdout }}
+        {% endfor %}
+        CSV_END
+
+    - name: "Display Zone IDs"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          ✅ STEP 2: ZONE IDS RETRIEVED
+          ═══════════════════════════════════════════
+          {% for i, domain in enumerate(domains_raw.stdout_lines) %}
+          {{ domain }} = {{ zone_ids_raw.results[i].stdout }}
+          {% endfor %}
+          ═══════════════════════════════════════════

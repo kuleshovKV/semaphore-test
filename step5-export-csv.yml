@@ -1,0 +1,59 @@
+---
+- name: "💾 STEP 5: Export to CSV"
+  hosts: all
+  gather_facts: no
+  
+  vars:
+    log_dir: "/var/log/casino-deployment"
+    
+  tasks:
+    - name: "Create log dir"
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Read nameservers"
+      shell: "cat /tmp/nameservers_final.txt"
+      register: ns_raw
+
+    - name: "Create CSV"
+      shell: |
+        cat > {{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv << 'CSV_END'
+        Domain,Nameserver1,Nameserver2
+        {% for line in ns_raw.stdout_lines %}
+        {% set parts = line.split(',') %}
+        {% set domain = parts[0] %}
+        {% set ns = parts[1].split('|') if parts | length > 1 else [] %}
+        {{ domain }},{{ ns[0] if ns | length > 0 else '' }},{{ ns[1] if ns | length > 1 else '' }}
+        {% endfor %}
+        CSV_END
+
+    - name: "Show CSV"
+      shell: "cat {{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+      register: csv_content
+
+    - name: "Display CSV"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          ✅ STEP 5: CSV EXPORTED
+          ═══════════════════════════════════════════
+          {{ csv_content.stdout }}
+          ═══════════════════════════════════════════
+
+    - name: "Download CSV"
+      fetch:
+        src: "{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+        dest: "./fetched/{{ inventory_hostname }}/"
+        flat: yes
+      ignore_errors: yes
+
+    - name: "Final message"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          🎉 ALL STEPS COMPLETE!
+          ═══════════════════════════════════════════
+          CSV downloaded to: ./fetched/{{ inventory_hostname }}/
+          ═══════════════════════════════════════════

@@ -1,0 +1,33 @@
+---
+- name: "📖 STEP 1: Read domains.csv"
+  hosts: all
+  gather_facts: no
+  
+  vars:
+    generator_dir: "/var/www/casino_generator"
+    
+  tasks:
+    - name: "Check domains.csv"
+      stat:
+        path: "{{ generator_dir }}/domains.csv"
+      register: csv_stat
+
+    - name: "Read CSV file"
+      shell: "cat {{ generator_dir }}/domains.csv | grep -v '^$'"
+      register: domains_raw
+      when: csv_stat.stat.exists
+      ignore_errors: yes
+
+    - name: "Display domains"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          ✅ STEP 1: DOMAINS READ
+          ═══════════════════════════════════════════
+          {{ domains_raw.stdout }}
+          Total: {{ domains_raw.stdout_lines | length }}
+          ═══════════════════════════════════════════
+
+    - name: "Save to /tmp"
+      shell: "cat {{ generator_dir }}/domains.csv | grep -v '^$' > /tmp/domains_list.txt"
+      when: csv_stat.stat.exists

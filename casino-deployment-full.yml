@@ -6,11 +6,10 @@
   
   vars:
     generator_dir: "/var/www/casino_generator"
-    sites_dir: "/var/www/casino_sites"
     log_dir: "/var/log/casino-deployment"
     
   tasks:
-    - name: "📦 Phase 1: Install dependencies"
+    - name: "📦 Install ImageMagick"
       apt:
         name: imagemagick-6.q16
         state: present
@@ -24,119 +23,153 @@
         mode: '0755'
       loop:
         - "{{ generator_dir }}"
-        - "{{ sites_dir }}"
         - "{{ log_dir }}"
 
-    - name: "📥 Phase 2: Clone repository"
+    - name: "📥 Clone repository"
       git:
         repo: "https://github.com/kuleshovKV/semaphore-test.git"
         dest: "{{ generator_dir }}"
         version: master
         force: yes
-      retries: 3
-      delay: 10
 
     - name: "🚀 Run generation script"
       shell: |
         cd {{ generator_dir }}
         if [ -f generate_sites.sh ]; then
-          bash generate_sites.sh 2>&1
-        else
-          echo "Script not found"
+          bash generate_sites.sh
         fi
       ignore_errors: yes
-      register: gen_output
 
-    - name: "📖 Phase 3: Read domains"
-      block:
-        - name: "Check domains.csv"
-          stat:
-            path: "{{ generator_dir }}/domains.csv"
-          register: csv_stat
+    - name: "📖 Read domains.csv"
+      shell: |
+        if [ -f {{ generator_dir }}/domains.csv ]; then
+          cat {{ generator_dir }}/domains.csv
+        else
+          echo ""
+        fi
+      register: domains_raw
 
-        - name: "Read CSV"
-          slurp:
-            src: "{{ generator_dir }}/domains.csv"
-          register: csv_content
-          when: csv_stat.stat.exists
+    - name: "Parse domains"
+      set_fact:
+        domains_list: "{{ domains_raw.stdout_lines | reject('match', '^$') | list }}"
 
-        - name: "Parse domains"
-          set_fact:
-            domains_list: "{{ (csv_content.content | b64decode).split('\n') | reject('match', '^$') | list }}"
-          when: csv_stat.stat.exists
+    - name: "Show domains count"
+      debug:
+        msg: "Found {{ domains_list | length }} domains"
 
-        - name: "Show count"
-          debug:
-            msg: "Domains: {{ domains_list | length | default(0) }}"
+    - name: "☁️ Check Cloudflare zones"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name={{ item }}" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" | \
+          python3 -c "import sys, json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') else '')"
+      register: zone_ids_raw
+      loop: "{{ domains_list }}"
+      delay: 0.5
+      ignore_errors: yes
 
-    - name: "☁️ Phase 4: Cloudflare API (curl)"
-      block:
-        - name: "Check domains in CF"
-          shell: |
-            curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name={{ item }}" \
-              -H "X-Auth-Email: {{ cf_email }}" \
-              -H "X-Auth-Key: {{ cf_api_key }}" \
-              -H "Content-Type: application/json"
-          register: cf_check
-          loop: "{{ domains_list | default([]) }}"
-          delay: 0.5
+    - name: "Extract zone IDs"
+      set_fact:
+        zone_ids: "{{ zone_ids_raw.results | map(attribute='stdout') | select('string') | reject('match', '^$') | list }}"
 
-        - name: "Extract zone IDs"
-          set_fact:
-            zone_ids: "{{ cf_check.results | map(attribute='stdout') | map('from_json') | map(attribute='result') | map('first', {}) | map(attribute='id') | list }}"
+    - name: "Show zone IDs"
+      debug:
+        msg: "Zone IDs: {{ zone_ids }}"
 
-    - name: "🌐 Phase 5: Create DNS records"
+    - name: "🌐 Create A records"
       shell: |
         curl -s -X POST "https://api.cloudflare.com/client/v4/zones/{{ item.1 }}/dns_records" \
           -H "X-Auth-Email: {{ cf_email }}" \
           -H "X-Auth-Key: {{ cf_api_key }}" \
           -H "Content-Type: application/json" \
           -d '{"type":"A","name":"{{ item.0 }}","content":"{{ ansible_default_ipv4.address }}","ttl":1,"proxied":true}'
-      loop: "{{ domains_list | default([]) | zip(zone_ids | default([])) | list }}"
+      loop: "{{ domains_list | zip(zone_ids) | list }}"
       delay: 0.5
       ignore_errors: yes
 
-    - name: "🔑 Phase 7: Get nameservers"
+    - name: "🌐 Create CNAME records"
+      shell: |
+        curl -s -X POST "https://api.cloudflare.com/client/v4/zones/{{ item.1 }}/dns_records" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" \
+          -d '{"type":"CNAME","name":"www.{{ item.0 }}","content":"{{ item.0 }}","ttl":1,"proxied":true}'
+      loop: "{{ domains_list | zip(zone_ids) | list }}"
+      delay: 0.5
+      ignore_errors: yes
+
+    - name: "🔑 Get nameservers"
       shell: |
         curl -s -X GET "https://api.cloudflare.com/client/v4/zones/{{ item }}" \
           -H "X-Auth-Email: {{ cf_email }}" \
           -H "X-Auth-Key: {{ cf_api_key }}" \
-          -H "Content-Type: application/json"
-      register: ns_info
-      loop: "{{ zone_ids | default([]) }}"
+          -H "Content-Type: application/json" | \
+          python3 -c "import sys, json; d=json.load(sys.stdin); print(','.join(d['result']['name_servers']) if d.get('result') else '')"
+      register: nameservers_raw
+      loop: "{{ zone_ids }}"
       delay: 0.5
       ignore_errors: yes
 
-    - name: "Extract nameservers"
-      set_fact:
-        nameserver_list: "{{ ns_info.results | map(attribute='stdout') | map('from_json') | map(attribute='result.name_servers') | list }}"
+    - name: "💾 Create nameservers CSV"
+      shell: |
+        cat > {{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv << 'CSVEOF'
+        Domain,Nameserver1,Nameserver2
+        {% for i in range(domains_list | length) %}
+        {% set ns = nameservers_raw.results[i].stdout.split(',') if i < nameservers_raw.results | length else [] %}
+        {{ domains_list[i] }},{{ ns[0] if ns | length > 0 else '' }},{{ ns[1] if ns | length > 1 else '' }}
+        {% endfor %}
+        CSVEOF
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
 
-    - name: "💾 Phase 8: Save nameservers"
-      copy:
-        content: |
-          Domain,Nameserver1,Nameserver2
-          {% for domain, ns in (domains_list | default([]) | zip(nameserver_list | default([]))) %}
-          {{ domain }},{{ ns[0] | default('') }},{{ ns[1] | default('') }}
-          {% endfor %}
-        dest: "{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
-        mode: '0644'
+    - name: "💾 Create nameservers TXT"
+      shell: |
+        cat > {{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.txt << 'TXTEOF'
+        # Cloudflare Nameservers for {{ inventory_hostname }}
+        # Generated: {{ ansible_date_time.iso8601 }}
+        
+        {% for i in range(domains_list | length) %}
+        Domain: {{ domains_list[i] }}
+        {% set ns = nameservers_raw.results[i].stdout.split(',') if i < nameservers_raw.results | length else [] %}
+        {% for n in ns %}
+        {{ n }}
+        {% endfor %}
+        
+        {% endfor %}
+        TXTEOF
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
 
-    - name: "📥 Phase 9: Download files"
+    - name: "📥 Download CSV file"
       fetch:
         src: "{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
         dest: "./fetched/{{ inventory_hostname }}/"
         flat: yes
       ignore_errors: yes
 
-    - name: "✅ Summary"
+    - name: "📥 Download TXT file"
+      fetch:
+        src: "{{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.txt"
+        dest: "./fetched/{{ inventory_hostname }}/"
+        flat: yes
+      ignore_errors: yes
+
+    - name: "✅ Deployment complete"
       debug:
         msg: |
           ═══════════════════════════════════════════════
           ✅ DEPLOYMENT COMPLETED!
           
           Host: {{ inventory_hostname }}
-          Domains: {{ domains_list | length | default(0) }}
+          Domains: {{ domains_list | length }}
+          Zones: {{ zone_ids | length }}
           
-          Files in: {{ log_dir }}/
+          Files saved in: {{ log_dir }}/
           Downloaded to: ./fetched/{{ inventory_hostname }}/
+          
+          CSV: NAMESERVERS_BULK_{{ inventory_hostname }}.csv
+          TXT: NAMESERVERS_{{ inventory_hostname }}.txt
           ═══════════════════════════════════════════════

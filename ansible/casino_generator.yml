@@ -14,7 +14,7 @@
 
     - name: "📥 Clone/update git repository"
       git:
-        repo: "git@github.com:kuleshovKV/semaphore-test.git"
+        repo: "https://github.com/kuleshovKV/semaphore-test.git"
         dest: "{{ generator_dir }}"
         version: master
         force: yes

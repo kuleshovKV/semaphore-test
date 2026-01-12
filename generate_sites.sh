@@ -33,6 +33,20 @@ pick_variant() {
   echo $(( sum % max ))
 }
 
+pick_page_variant() {
+  local key="$1"
+  local max="$2"
+  local sum=0
+  local i char
+
+  for (( i=0; i<${#key}; i++ )); do
+    char=$(printf '%d' "'${key:$i:1}")
+    sum=$((sum + char))
+  done
+
+  echo $(( sum % max ))
+}
+
 render_page() {
   local tpl="$1"
   local out="$2"
@@ -106,6 +120,59 @@ while IFS= read -r domain; do
         ;;
     esac
 
+    BONUS_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_bonus" 3)
+    WITHDRAW_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_withdraw" 3)
+    REGISTER_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_register" 3)
+    REVIEWS_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_reviews" 3)
+
+    case "$BONUS_PAGE_VARIANT" in
+      0)
+        BONUSES_INTRO_PAGE="$BONUSES_INTRO"
+        ;;
+      1)
+        BONUSES_INTRO_PAGE="В ${BRAND_NAME} новый игрок может собрать приветственный пакет из бонусов на первые депозиты и фриспинов на популярные слоты."
+        ;;
+      2)
+        BONUSES_INTRO_PAGE="${BRAND_NAME} регулярно запускает временные акции с увеличенными бонусами, промокодами и розыгрышами среди активных игроков."
+        ;;
+    esac
+
+    case "$WITHDRAW_PAGE_VARIANT" in
+      0)
+        WITHDRAWAL_INTRO_PAGE="$WITHDRAWAL_INTRO"
+        ;;
+      1)
+        WITHDRAWAL_INTRO_PAGE="Средства из ${BRAND_NAME} можно вывести на банковские карты, электронные кошельки и другую популярную платёжную инфраструктуру без лишних задержек."
+        ;;
+      2)
+        WITHDRAWAL_INTRO_PAGE="Перед первым выводом в ${BRAND_NAME} потребуется пройти верификацию, после чего повторные заявки обычно обрабатываются значительно быстрее."
+        ;;
+    esac
+
+    case "$REGISTER_PAGE_VARIANT" in
+      0)
+        REGISTER_INTRO_PAGE="$REGISTER_INTRO"
+        ;;
+      1)
+        REGISTER_INTRO_PAGE="Анкета в ${BRAND_NAME} максимально упрощена: укажите базовые данные, выберите валюту счёта и сразу переходите к пополнению и игре."
+        ;;
+      2)
+        REGISTER_INTRO_PAGE="${BRAND_NAME} позволяет создать аккаунт с привязкой к телефону или email, что упрощает восстановление доступа и работу с бонусами."
+        ;;
+    esac
+
+    case "$REVIEWS_PAGE_VARIANT" in
+      0)
+        REVIEWS_INTRO_PAGE="$REVIEWS_INTRO"
+        ;;
+      1)
+        REVIEWS_INTRO_PAGE="Часть игроков отмечает в отзывах ${BRAND_NAME} за стабильную работу сайта, быстрое открытие игр и понятные условия бонусных предложений."
+        ;;
+      2)
+        REVIEWS_INTRO_PAGE="Среди отзывов о ${BRAND_NAME} часто встречаются комментарии о разнообразии провайдеров слотов и регулярных акциях для активных клиентов."
+        ;;
+    esac
+
     SITE_DIR="${DOMAIN_DIR}/${BRAND_SLUG}"
     mkdir -p "${SITE_DIR}"/{register,bonus,reviews,withdrawal}
 
@@ -118,28 +185,28 @@ while IFS= read -r domain; do
 
     render_page "$TEMPLATE" "${SITE_DIR}/register/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "register/" \
       "Регистрация в ${BRAND_NAME}" \
-      "$REGISTER_INTRO" \
+      "$REGISTER_INTRO_PAGE" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
       ""
 
     render_page "$TEMPLATE" "${SITE_DIR}/bonus/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "bonus/" \
       "Бонусы и акции ${BRAND_NAME}" \
-      "$BONUSES_INTRO" \
+      "$BONUSES_INTRO_PAGE" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
       ""
 
     render_page "$TEMPLATE" "${SITE_DIR}/reviews/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "reviews/" \
       "Отзывы игроков о ${BRAND_NAME}" \
-      "$REVIEWS_INTRO" \
+      "$REVIEWS_INTRO_PAGE" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
       ""
 
     render_page "$TEMPLATE" "${SITE_DIR}/withdrawal/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "withdrawal/" \
       "Вывод средств в ${BRAND_NAME}" \
-      "$WITHDRAWAL_INTRO" \
+      "$WITHDRAWAL_INTRO_PAGE" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
       ""

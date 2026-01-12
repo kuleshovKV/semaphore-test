@@ -1,0 +1,93 @@
+---
+# TEST: Verify Cloudflare Authentication
+- name: "🔐 TEST: Cloudflare Authentication"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Display credentials"
+      debug:
+        msg: |
+          Testing Cloudflare Auth
+          ═══════════════════════════════════════════
+          Email: {{ cf_email }}
+          API Key: {{ cf_api_key | truncate(20) }}...
+          Account ID: {{ cf_account_id }}
+          ═══════════════════════════════════════════
+
+    - name: "Test API connectivity"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json"
+      register: zones_response
+      ignore_errors: yes
+
+    - name: "Parse response"
+      set_fact:
+        zones_data: "{{ zones_response.stdout | from_json }}"
+      ignore_errors: yes
+
+    - name: "Check authentication"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          Authentication Test Results
+          ═══════════════════════════════════════════
+          
+          API Response Success: {{ zones_data.success | default('ERROR') }}
+          
+          {% if zones_data.success %}
+          ✅ AUTHENTICATION OK!
+          
+          Zones Found: {{ zones_data.result | length }}
+          {% for zone in zones_data.result %}
+          - {{ zone.name }} (ID: {{ zone.id }})
+          {% endfor %}
+          {% else %}
+          ❌ AUTHENTICATION FAILED!
+          Error: {{ zones_data.errors | default('Unknown error') }}
+          {% endif %}
+          
+          ═══════════════════════════════════════════
+
+    - name: "Test specific domain"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=casino400.ru" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json"
+      register: domain_response
+      ignore_errors: yes
+
+    - name: "Check domain"
+      set_fact:
+        domain_data: "{{ domain_response.stdout | from_json }}"
+      ignore_errors: yes
+
+    - name: "Show domain status"
+      debug:
+        msg: |
+          Domain Status: casino400.ru
+          ═══════════════════════════════════════════
+          
+          {% if domain_data.result | length > 0 %}
+          ✅ FOUND in Cloudflare!
+          Zone ID: {{ domain_data.result[0].id }}
+          {% else %}
+          ❌ NOT FOUND in Cloudflare
+          Action: Add domain via https://dash.cloudflare.com/
+          {% endif %}
+          
+          ═══════════════════════════════════════════
+
+    - name: "Final result"
+      debug:
+        msg: |
+          Ready to proceed?
+          
+          ✅ YES: If zones shown above
+          ❌ NO: If authentication failed or domain not found
+          
+          Next: ansible-playbook -i inventory.ini step2-cloudflare-zones.yml -v

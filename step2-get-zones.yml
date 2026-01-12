@@ -1,0 +1,29 @@
+---
+- name: "Get Cloudflare Zone IDs"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Create zone mapping file"
+      shell: |
+        rm -f /tmp/zone_mapping.txt
+        touch /tmp/zone_mapping.txt
+        
+        while IFS= read -r domain; do
+          [ -z "$domain" ] && continue
+          zone_id=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${domain}" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json" | \
+            python3 -c "import sys, json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') else 'NOT_FOUND')" 2>/dev/null)
+          echo "${domain},${zone_id}" >> /tmp/zone_mapping.txt
+          sleep 1
+        done < /tmp/domains_list.txt
+
+    - name: "Display zone mapping"
+      shell: "cat /tmp/zone_mapping.txt"
+      register: zone_mapping
+
+    - name: "Show results"
+      debug:
+        msg: "✅ ZONE IDS\n{{ zone_mapping.stdout }}"

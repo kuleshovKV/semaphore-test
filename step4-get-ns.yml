@@ -1,0 +1,29 @@
+---
+- name: "Get Nameservers"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Fetch nameservers"
+      shell: |
+        rm -f /tmp/nameservers_final.txt
+        touch /tmp/nameservers_final.txt
+        
+        while IFS=',' read -r domain zone_id; do
+          [ -z "$domain" ] && continue
+          ns=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json" | \
+            python3 -c "import sys, json; d=json.load(sys.stdin); ns=d['result']['name_servers'] if d.get('result') else []; print('|'.join(ns))" 2>/dev/null)
+          echo "${domain},${ns}" >> /tmp/nameservers_final.txt
+          sleep 1
+        done < /tmp/zone_mapping.txt
+
+    - name: "Show nameservers"
+      shell: "cat /tmp/nameservers_final.txt"
+      register: ns
+
+    - name: "Display"
+      debug:
+        msg: "✅ NAMESERVERS\n{{ ns.stdout }}"

@@ -1,0 +1,41 @@
+---
+- name: "Export to CSV"
+  hosts: all
+  gather_facts: no
+  
+  vars:
+    log_dir: "/var/log/casino-deployment"
+  
+  tasks:
+    - name: "Create directory"
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Build CSV"
+      shell: |
+        csv_file="{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+        echo "Domain,Nameserver1,Nameserver2" > "${csv_file}"
+        
+        while IFS=',' read -r domain ns_str; do
+          [ -z "$domain" ] && continue
+          ns1=$(echo "$ns_str" | cut -d'|' -f1)
+          ns2=$(echo "$ns_str" | cut -d'|' -f2)
+          echo "${domain},${ns1},${ns2}" >> "${csv_file}"
+        done < /tmp/nameservers_final.txt
+
+    - name: "Show CSV"
+      shell: "cat {{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+      register: csv
+
+    - name: "Download"
+      fetch:
+        src: "{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+        dest: "./fetched/{{ inventory_hostname }}/"
+        flat: yes
+      ignore_errors: yes
+
+    - name: "Done"
+      debug:
+        msg: "✅ COMPLETE\n{{ csv.stdout }}"

@@ -1,0 +1,34 @@
+---
+- name: "Create DNS A Records"
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: "Create A records"
+      shell: |
+        while IFS=',' read -r domain zone_id; do
+          [ -z "$domain" ] && continue
+          ip="{{ ansible_default_ipv4.address }}"
+          
+          echo "Creating *.${domain} and sykaaa.${domain}"
+          
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"A\",\"name\":\"*.${domain}\",\"content\":\"${ip}\",\"ttl\":1,\"proxied\":true}" > /dev/null 2>&1
+          
+          sleep 1
+          
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"A\",\"name\":\"sykaaa.${domain}\",\"content\":\"${ip}\",\"ttl\":1,\"proxied\":true}" > /dev/null 2>&1
+          
+          sleep 1
+        done < /tmp/zone_mapping.txt
+
+    - name: "Confirm"
+      debug:
+        msg: "✅ DNS RECORDS CREATED"

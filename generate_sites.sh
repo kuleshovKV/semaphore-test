@@ -143,7 +143,7 @@ while IFS= read -r domain; do
     esac
 
     SITE_DIR="${DOMAIN_DIR}/${BRAND_SLUG}"
-    mkdir -p "${SITE_DIR}"/{register,bonus,reviews,withdrawal}
+    mkdir -p "${SITE_DIR}"/{register,bonus,reviews,withdrawal,privacy,terms,responsible-gaming}
 
     render_page "$TEMPLATE" "${SITE_DIR}/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "" \
       "${BRAND_NAME} — официальный сайт онлайн казино" \

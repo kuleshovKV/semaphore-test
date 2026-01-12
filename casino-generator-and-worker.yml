@@ -1,0 +1,147 @@
+---
+- name: "🎰 CASINO SITES GENERATOR & CLOUDFLARE WORKER DEPLOY"
+  hosts: all
+  become: true
+  gather_facts: yes
+
+  vars:
+    generator_dir: "/var/www/casino_generator"
+    worker_name: "casino-cloaking-worker"
+    cf_account_id: "{{ cloudflare_account_id }}"
+    cf_api_token: "{{ cloudflare_api_token }}"
+
+  pre_tasks:
+    - name: "✅ Show playbook info"
+      debug:
+        msg: |
+          🎰 CASINO GENERATOR + CLOUDFLARE WORKER
+          ✅ Generate casino sites (HTML, pages, favicon)
+          ✅ Deploy to Cloudflare Worker (YandexBot cloaking)
+          ✅ Referral redirects for search users
+          ✅ Block others (403)
+
+  tasks:
+    # ============ SITE GENERATION SECTION ============
+    
+    - name: "📦 Install ImageMagick for favicon generation"
+      apt:
+        name: imagemagick-6.q16
+        state: present
+        update_cache: yes
+
+    - name: "📁 Ensure generator dir exists"
+      file:
+        path: "{{ generator_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "📥 Clone/update git repository"
+      git:
+        repo: "https://github.com/kuleshovKV/semaphore-test.git"
+        dest: "{{ generator_dir }}"
+        version: master
+        force: yes
+
+    - name: "🔧 Make generate_sites.sh executable"
+      file:
+        path: "{{ generator_dir }}/generate_sites.sh"
+        mode: '0755'
+        state: file
+
+    - name: "🚀 Run generation script"
+      shell: "cd {{ generator_dir }} && ./generate_sites.sh"
+      register: generation_output
+      timeout: 300
+
+    - name: "✅ Show generation result"
+      debug:
+        msg: "{{ generation_output.stdout }}"
+
+    - name: "📊 Count generated files"
+      shell: "find {{ generator_dir }}/output -type f | wc -l"
+      register: file_count
+
+    - debug:
+        msg: "Generated {{ file_count.stdout }} files"
+
+    # ============ CLOUDFLARE WORKER SECTION ============
+
+    - name: "🔵 Read Cloudflare Worker script"
+      slurp:
+        src: "{{ generator_dir }}/cloudflare-worker-cloaking-advanced.js"
+      register: worker_code
+
+    - name: "🚀 Deploy Cloudflare Worker"
+      uri:
+        url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/workers/scripts/{{ worker_name }}"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ cf_api_token }}"
+          Content-Type: "application/javascript"
+        body: "{{ worker_code['content'] | b64decode }}"
+        status_code: 200, 201
+      register: worker_deploy
+      ignore_errors: yes
+
+    - name: "✅ Worker deploy result"
+      debug:
+        msg: "{{ worker_deploy.json | default(worker_deploy.msg) }}"
+
+    - name: "🔗 Create Cloudflare Route for Worker"
+      uri:
+        url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/workers/routes"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ cf_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          pattern: "*.{{ casino_domain }}/*"
+          script: "{{ worker_name }}"
+        status_code: 200, 201
+      register: route_result
+      ignore_errors: yes
+
+    - name: "✅ Route binding result"
+      debug:
+        msg: "{{ route_result.json | default(route_result.msg) }}"
+
+  post_tasks:
+    - name: "📋 SUMMARY"
+      debug:
+        msg: |
+          
+          ✅ ========================================
+          ✅ CASINO GENERATOR + WORKER DEPLOYED
+          ✅ ========================================
+          
+          📊 GENERATION STATS:
+            - Generated files: {{ file_count.stdout }}
+            - Generator dir: {{ generator_dir }}
+            - Source: https://github.com/kuleshovKV/semaphore-test.git
+          
+          🔵 CLOUDFLARE WORKER:
+            - Name: {{ worker_name }}
+            - Account ID: {{ cf_account_id }}
+            - Status: Deployed
+          
+          🎯 ROUTING RULES:
+            1. ✅ YandexBot (200 OK):
+               → Proxies to origin server
+               → Serves generated site content
+               → Cache: 1 hour
+               → Full HTML + pages + dynamic favicon
+          
+            2. 🔄 Search engine users (301 redirect):
+               - kilogram.* → https://kgpar.com/refs/share?refId=subkilo
+               - sykaaa.* → https://s-way-q.com/?source=sub_sykaaa
+               - default → https://kgpar.com/refs/share?refId=cross_1
+          
+            3. 🚫 Others (403 Forbidden):
+               → Access denied for direct traffic
+          
+          🌍 Pattern: {{ casino_domain }}/*
+          🔐 Hosted on: Cloudflare Edge
+          📍 Regions: Global CDN
+          
+          ✅ Monitor logs: Cloudflare Dashboard → Workers

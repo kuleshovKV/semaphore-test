@@ -1,0 +1,103 @@
+---
+- name: "Setup DNS Records"
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: "Get Nameservers"
+      shell: |
+        rm -f /tmp/nameservers.txt /tmp/nameservers_csv.txt
+        echo "Domain,NS1,NS2" > /tmp/nameservers_csv.txt
+        echo "=== NAMESERVERS ===" > /tmp/nameservers.txt
+        while IFS=',' read -r domain zone_id; do
+          [ -z "$domain" ] && continue
+          [ "$zone_id" = "NOT_FOUND" ] && continue
+          
+          echo "Getting NS for ${domain} (${zone_id})..."
+          
+          zone_info=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json")
+          
+          ns_list=$(echo "$zone_info" | python3 -c "import sys, json; d=json.load(sys.stdin); ns=d.get('result',{}).get('name_servers',[]); print(','.join(ns))")
+          
+          echo "${domain}:" >> /tmp/nameservers.txt
+          echo "$ns_list" >> /tmp/nameservers.txt
+          echo "${domain},${ns_list}" >> /tmp/nameservers_csv.txt
+          echo "" >> /tmp/nameservers.txt
+          sleep 1
+        done < /tmp/zone_mapping.txt
+
+    - name: "Show Nameservers"
+      shell: cat /tmp/nameservers.txt
+      register: ns_display
+
+    - name: "Display NS"
+      debug:
+        msg: "{{ ns_display.stdout }}"
+
+    - name: "Show CSV"
+      shell: cat /tmp/nameservers_csv.txt
+      register: csv_output
+
+    - name: "Display CSV"
+      debug:
+        msg: "{{ csv_output.stdout }}"
+
+    - name: "Create DNS A records"
+      shell: |
+        ip="{{ ansible_default_ipv4.address }}"
+        rm -f /tmp/dns_records_created.txt
+        echo "=== CREATED DNS RECORDS ===" > /tmp/dns_records_created.txt
+        
+        while IFS=',' read -r domain zone_id; do
+          [ -z "$domain" ] && continue
+          [ "$zone_id" = "NOT_FOUND" ] && continue
+          
+          echo "${domain}:" >> /tmp/dns_records_created.txt
+          
+          while IFS= read -r subdomain; do
+            [ -z "$subdomain" ] && continue
+            
+            full_domain="${subdomain}.${domain}"
+            echo "  Creating: ${full_domain} → ${ip}"
+            echo "  ${full_domain}" >> /tmp/dns_records_created.txt
+            
+            result=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+              -H "X-Auth-Email: {{ cf_email }}" \
+              -H "X-Auth-Key: {{ cf_api_key }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"type\":\"A\",\"name\":\"${full_domain}\",\"content\":\"${ip}\",\"ttl\":1,\"proxied\":true}")
+            
+            success=$(echo "$result" | python3 -c "import sys, json; d=json.load(sys.stdin); print('OK' if d.get('success') else 'FAIL')")
+            echo "    Status: ${success}"
+            
+            sleep 0.5
+          done < /tmp/subdomains.csv
+          
+          echo "" >> /tmp/dns_records_created.txt
+        done < /tmp/zone_mapping.txt
+      register: dns_creation
+
+    - name: "Show DNS creation output"
+      debug:
+        msg: "{{ dns_creation.stdout_lines }}"
+
+    - name: "Show DNS records"
+      shell: cat /tmp/dns_records_created.txt
+      register: dns_output
+
+    - name: "Display DNS"
+      debug:
+        msg: "{{ dns_output.stdout }}"
+
+    - name: "Final"
+      debug:
+        msg: |
+          ✅ COMPLETE!
+          
+          📁 FILES:
+          - /tmp/zone_mapping.txt
+          - /tmp/nameservers_csv.txt - COPY TO REGISTRAR
+          - /tmp/dns_records_created.txt - DNS RECORDS

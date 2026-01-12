@@ -1,0 +1,103 @@
+---
+# CHECK: Verify Cloudflare Authentication
+- name: "🔐 Check Cloudflare Authentication"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Show credentials"
+      debug:
+        msg: |
+          Testing Cloudflare Credentials
+          ═══════════════════════════════════════════
+          Email: {{ cf_email }}
+          API Key: {{ cf_api_key[0:20] }}...
+          Account ID: {{ cf_account_id }}
+          ═══════════════════════════════════════════
+
+    - name: "Test 1: Get zones list"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones?per_page=5" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" \
+          --max-time 10
+      register: zones_result
+      timeout: 15
+
+    - name: "Parse zones response"
+      set_fact:
+        zones_json: "{{ zones_result.stdout | from_json }}"
+      ignore_errors: yes
+
+    - name: "Show auth result"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          Authentication Status
+          ═══════════════════════════════════════════
+          
+          Success: {{ zones_json.success | default(false) }}
+          
+          {% if zones_json.success %}
+          ✅ AUTHENTICATION OK!
+          
+          Zones count: {{ zones_json.result | length }}
+          {% for zone in zones_json.result %}
+          - {{ zone.name }} ({{ zone.id }})
+          {% endfor %}
+          {% else %}
+          ❌ AUTHENTICATION FAILED!
+          Error: {{ zones_json.errors | default('Unknown') }}
+          {% endif %}
+          
+          ═══════════════════════════════════════════
+
+    - name: "Test 2: Check casino400.ru"
+      shell: |
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=casino400.ru" \
+          -H "X-Auth-Email: {{ cf_email }}" \
+          -H "X-Auth-Key: {{ cf_api_key }}" \
+          -H "Content-Type: application/json" \
+          --max-time 10
+      register: domain_result
+      timeout: 15
+
+    - name: "Parse domain response"
+      set_fact:
+        domain_json: "{{ domain_result.stdout | from_json }}"
+      ignore_errors: yes
+
+    - name: "Show domain status"
+      debug:
+        msg: |
+          Domain: casino400.ru
+          ═══════════════════════════════════════════
+          
+          {% if domain_json.result | length > 0 %}
+          ✅ FOUND!
+          Zone ID: {{ domain_json.result[0].id }}
+          Status: {{ domain_json.result[0].status }}
+          {% else %}
+          ❌ NOT FOUND
+          Action: Add via https://dash.cloudflare.com/
+          {% endif %}
+          
+          ═══════════════════════════════════════════
+
+    - name: "Final check"
+      debug:
+        msg: |
+          ═══════════════════════════════════════════
+          ✅ CHECK COMPLETE
+          ═══════════════════════════════════════════
+          
+          {% if zones_json.success and domain_json.result | length > 0 %}
+          ✅ Ready to run: complete-deployment.yml
+          {% elif zones_json.success %}
+          ⚠️  Auth OK, but domain not found. Add domains first.
+          {% else %}
+          ❌ Auth failed. Check credentials.
+          {% endif %}
+          
+          ═══════════════════════════════════════════

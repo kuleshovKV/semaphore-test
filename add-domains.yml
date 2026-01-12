@@ -1,0 +1,71 @@
+---
+- name: "Add Domains to Cloudflare"
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    - name: "Add domains to Cloudflare"
+      shell: |
+        for domain in $(cat /tmp/domains_list.txt); do
+          [ -z "$domain" ] && continue
+          
+          echo "Checking if ${domain} exists..."
+          
+          check=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${domain}" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json")
+          
+          exists=$(echo "$check" | python3 -c "import sys, json; d=json.load(sys.stdin); print('YES' if d.get('result') and len(d['result']) > 0 else 'NO')")
+          
+          if [ "$exists" = "NO" ]; then
+            echo "Adding ${domain}..."
+            
+            response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones" \
+              -H "X-Auth-Email: {{ cf_email }}" \
+              -H "X-Auth-Key: {{ cf_api_key }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\":\"${domain}\",\"jump_start\":true}")
+            
+            success=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin); print('SUCCESS' if d.get('success') else 'FAILED')" 2>/dev/null || echo "FAILED")
+            
+            if [ "$success" = "SUCCESS" ]; then
+              echo "✅ ${domain} added"
+            else
+              echo "❌ ${domain} failed"
+              echo "$response" | python3 -m json.tool
+            fi
+            
+            sleep 3
+          else
+            echo "✅ ${domain} exists"
+          fi
+        done
+      register: add_result
+
+    - name: "Show results"
+      debug:
+        msg: "{{ add_result.stdout_lines }}"
+
+    - name: "Wait for domains to initialize"
+      pause:
+        seconds: 10
+
+    - name: "Get zone mapping"
+      shell: |
+        rm -f /tmp/zone_mapping.txt
+        for domain in $(cat /tmp/domains_list.txt); do
+          [ -z "$domain" ] && continue
+          zone_id=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${domain}" \
+            -H "X-Auth-Email: {{ cf_email }}" \
+            -H "X-Auth-Key: {{ cf_api_key }}" \
+            -H "Content-Type: application/json" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') and len(d['result']) > 0 else 'NOT_FOUND')")
+          echo "✅ ${domain} = ${zone_id}"
+          echo "${domain},${zone_id}" >> /tmp/zone_mapping.txt
+          sleep 1
+        done
+      register: zone_result
+
+    - name: "Show zone mapping"
+      debug:
+        msg: "{{ zone_result.stdout_lines }}"

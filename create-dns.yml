@@ -1,0 +1,62 @@
+---
+- name: "Create DNS A Records"
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: "Copy subdomains to remote"
+      copy:
+        content: |
+          kilogram
+          pinco
+          game
+          test
+        dest: /tmp/subdomains.csv
+
+    - name: "Create DNS A records"
+      shell: |
+        ip="{{ ansible_default_ipv4.address }}"
+        rm -f /tmp/dns_records_created.txt
+        echo "=== CREATED DNS RECORDS ===" > /tmp/dns_records_created.txt
+
+        while IFS=',' read -r domain zone_id; do
+          [ -z "$domain" ] && continue
+          [ "$zone_id" = "NOT_FOUND" ] && continue
+
+          echo "Processing ${domain}..."
+          echo "${domain}:" >> /tmp/dns_records_created.txt
+
+          while IFS= read -r subdomain; do
+            [ -z "$subdomain" ] && continue
+
+            full_domain="${subdomain}.${domain}"
+            echo "  Creating: ${full_domain} → ${ip}"
+            echo "  ${full_domain}" >> /tmp/dns_records_created.txt
+
+            result=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+              -H "X-Auth-Email: {{ cf_email }}" \
+              -H "X-Auth-Key: {{ cf_api_key }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"type\":\"A\",\"name\":\"${full_domain}\",\"content\":\"${ip}\",\"ttl\":1,\"proxied\":true}")
+
+            success=$(echo "$result" | python3 -c "import sys, json; d=json.load(sys.stdin); print('✅' if d.get('success') else '❌')")
+            echo "    ${success} ${full_domain}"
+
+            sleep 0.5
+          done < /tmp/subdomains.csv
+
+          echo "" >> /tmp/dns_records_created.txt
+        done < /tmp/zone_mapping.txt
+      register: dns_creation
+
+    - name: "Show DNS creation output"
+      debug:
+        msg: "{{ dns_creation.stdout_lines }}"
+
+    - name: "Show created records"
+      shell: cat /tmp/dns_records_created.txt
+      register: dns_output
+
+    - name: "Display DNS"
+      debug:
+        msg: "{{ dns_output.stdout }}"

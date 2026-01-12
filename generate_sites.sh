@@ -33,20 +33,6 @@ pick_variant() {
   echo $(( sum % max ))
 }
 
-pick_page_variant() {
-  local key="$1"
-  local max="$2"
-  local sum=0
-  local i char
-
-  for (( i=0; i<${#key}; i++ )); do
-    char=$(printf '%d' "'${key:$i:1}")
-    sum=$((sum + char))
-  done
-
-  echo $(( sum % max ))
-}
-
 render_page() {
   local tpl="$1"
   local out="$2"
@@ -59,6 +45,11 @@ render_page() {
   local ref_link="$9"
   local page_bonuses="${10}"
   local extra_block_html="${11}"
+  local date_published="${12}"
+  local date_modified="${13}"
+  local section_1="${14}"
+  local section_2="${15}"
+  local section_3="${16}"
 
   sed \
     -e "s|BRAND_NAME|${brand_name}|g" \
@@ -70,6 +61,11 @@ render_page() {
     -e "s|PAGE_BONUSES|${page_bonuses}|g" \
     -e "s|EXTRA_BLOCK_HTML|${extra_block_html}|g" \
     -e "s|REF_LINK|${ref_link}|g" \
+    -e "s|DATE_PUBLISHED|${date_published}|g" \
+    -e "s|DATE_MODIFIED|${date_modified}|g" \
+    -e "s|SECTION_1_BLOCK|${section_1}|g" \
+    -e "s|SECTION_2_BLOCK|${section_2}|g" \
+    -e "s|SECTION_3_BLOCK|${section_3}|g" \
     "$tpl" > "$out"
 }
 
@@ -92,6 +88,13 @@ while IFS= read -r domain; do
     [[ -z "$REF_LINK" ]] && REF_LINK="$DEFAULT_REF"
 
     VARIANT_INDEX=$(pick_variant "$BRAND_SLUG" 3)
+    SECTION_VARIANT=$(pick_variant "${BRAND_SLUG}_section" 3)
+    DATE_OFFSET=$(pick_variant "${BRAND_SLUG}_date" 7)
+
+    # Даты (сегодня ± N дней)
+    TODAY=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    DATE_PUBLISHED=$(date -u -d "${DATE_OFFSET} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "2025-01-01T00:00:00Z")
+    DATE_MODIFIED="$TODAY"
 
     case "$VARIANT_INDEX" in
       0)
@@ -120,56 +123,22 @@ while IFS= read -r domain; do
         ;;
     esac
 
-    BONUS_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_bonus" 3)
-    WITHDRAW_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_withdraw" 3)
-    REGISTER_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_register" 3)
-    REVIEWS_PAGE_VARIANT=$(pick_page_variant "${BRAND_SLUG}_reviews" 3)
-
-    case "$BONUS_PAGE_VARIANT" in
+    # Вариативность структуры блоков (разный порядок)
+    case "$SECTION_VARIANT" in
       0)
-        BONUSES_INTRO_PAGE="$BONUSES_INTRO"
+        SECTION_1="<h2>Официальный сайт ${BRAND_NAME}</h2><p><strong>${BRAND_NAME}</strong> — это современное онлайн-казино с международной лицензией Curacao, доступом к тысячам слотов и быстрыми выплатами на популярные платёжные системы.</p><table><tr><th>Параметр</th><th>Описание</th></tr><tr><td>Лицензия</td><td>Curacao eGaming, номер 365/JAZ</td></tr><tr><td>Игровые автоматы</td><td>7200+ слотов, live-дилеры, crash-игры, Megaways и настольные игры</td></tr><tr><td>Минимальный депозит</td><td>от 100 ₽ или 5 EUR, в зависимости от способа оплаты</td></tr><tr><td>Скорость вывода</td><td>в среднем 5–30 минут после подтверждения заявки</td></tr></table>"
+        SECTION_2="<h2>Бонусы и акции ${BRAND_NAME}</h2><p>${BONUSES_INTRO}</p>"
+        SECTION_3="$EXTRA_BLOCK_HTML"
         ;;
       1)
-        BONUSES_INTRO_PAGE="В ${BRAND_NAME} новый игрок может собрать приветственный пакет из бонусов на первые депозиты и фриспинов на популярные слоты."
+        SECTION_1="<h2>Бонусы и акции ${BRAND_NAME}</h2><p>${BONUSES_INTRO}</p>"
+        SECTION_2="<h2>Официальный сайт ${BRAND_NAME}</h2><p><strong>${BRAND_NAME}</strong> — это современное онлайн-казино с международной лицензией Curacao, доступом к тысячам слотов и быстрыми выплатами на популярные платёжные системы.</p><table><tr><th>Параметр</th><th>Описание</th></tr><tr><td>Лицензия</td><td>Curacao eGaming, номер 365/JAZ</td></tr><tr><td>Игровые автоматы</td><td>7200+ слотов, live-дилеры, crash-игры, Megaways и настольные игры</td></tr><tr><td>Минимальный депозит</td><td>от 100 ₽ или 5 EUR, в зависимости от способа оплаты</td></tr><tr><td>Скорость вывода</td><td>в среднем 5–30 минут после подтверждения заявки</td></tr></table>"
+        SECTION_3="$EXTRA_BLOCK_HTML"
         ;;
       2)
-        BONUSES_INTRO_PAGE="${BRAND_NAME} регулярно запускает временные акции с увеличенными бонусами, промокодами и розыгрышами среди активных игроков."
-        ;;
-    esac
-
-    case "$WITHDRAW_PAGE_VARIANT" in
-      0)
-        WITHDRAWAL_INTRO_PAGE="$WITHDRAWAL_INTRO"
-        ;;
-      1)
-        WITHDRAWAL_INTRO_PAGE="Средства из ${BRAND_NAME} можно вывести на банковские карты, электронные кошельки и другую популярную платёжную инфраструктуру без лишних задержек."
-        ;;
-      2)
-        WITHDRAWAL_INTRO_PAGE="Перед первым выводом в ${BRAND_NAME} потребуется пройти верификацию, после чего повторные заявки обычно обрабатываются значительно быстрее."
-        ;;
-    esac
-
-    case "$REGISTER_PAGE_VARIANT" in
-      0)
-        REGISTER_INTRO_PAGE="$REGISTER_INTRO"
-        ;;
-      1)
-        REGISTER_INTRO_PAGE="Анкета в ${BRAND_NAME} максимально упрощена: укажите базовые данные, выберите валюту счёта и сразу переходите к пополнению и игре."
-        ;;
-      2)
-        REGISTER_INTRO_PAGE="${BRAND_NAME} позволяет создать аккаунт с привязкой к телефону или email, что упрощает восстановление доступа и работу с бонусами."
-        ;;
-    esac
-
-    case "$REVIEWS_PAGE_VARIANT" in
-      0)
-        REVIEWS_INTRO_PAGE="$REVIEWS_INTRO"
-        ;;
-      1)
-        REVIEWS_INTRO_PAGE="Часть игроков отмечает в отзывах ${BRAND_NAME} за стабильную работу сайта, быстрое открытие игр и понятные условия бонусных предложений."
-        ;;
-      2)
-        REVIEWS_INTRO_PAGE="Среди отзывов о ${BRAND_NAME} часто встречаются комментарии о разнообразии провайдеров слотов и регулярных акциях для активных клиентов."
+        SECTION_1="$EXTRA_BLOCK_HTML"
+        SECTION_2="<h2>Официальный сайт ${BRAND_NAME}</h2><p><strong>${BRAND_NAME}</strong> — это современное онлайн-казино с международной лицензией Curacao, доступом к тысячам слотов и быстрыми выплатами на популярные платёжные системы.</p><table><tr><th>Параметр</th><th>Описание</th></tr><tr><td>Лицензия</td><td>Curacao eGaming, номер 365/JAZ</td></tr><tr><td>Игровые автоматы</td><td>7200+ слотов, live-дилеры, crash-игры, Megaways и настольные игры</td></tr><tr><td>Минимальный депозит</td><td>от 100 ₽ или 5 EUR, в зависимости от способа оплаты</td></tr><tr><td>Скорость вывода</td><td>в среднем 5–30 минут после подтверждения заявки</td></tr></table>"
+        SECTION_3="<h2>Бонусы и акции ${BRAND_NAME}</h2><p>${BONUSES_INTRO}</p>"
         ;;
     esac
 
@@ -181,35 +150,60 @@ while IFS= read -r domain; do
       "$OFFICIAL_INTRO" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
-      "$EXTRA_BLOCK_HTML"
+      "" \
+      "$DATE_PUBLISHED" \
+      "$DATE_MODIFIED" \
+      "$SECTION_1" \
+      "$SECTION_2" \
+      "$SECTION_3"
 
     render_page "$TEMPLATE" "${SITE_DIR}/register/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "register/" \
       "Регистрация в ${BRAND_NAME}" \
-      "$REGISTER_INTRO_PAGE" \
+      "$REGISTER_INTRO" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
-      ""
+      "" \
+      "$DATE_PUBLISHED" \
+      "$DATE_MODIFIED" \
+      "$SECTION_1" \
+      "$SECTION_2" \
+      "$SECTION_3"
 
     render_page "$TEMPLATE" "${SITE_DIR}/bonus/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "bonus/" \
       "Бонусы и акции ${BRAND_NAME}" \
-      "$BONUSES_INTRO_PAGE" \
+      "$BONUSES_INTRO" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
-      ""
+      "" \
+      "$DATE_PUBLISHED" \
+      "$DATE_MODIFIED" \
+      "$SECTION_1" \
+      "$SECTION_2" \
+      "$SECTION_3"
 
     render_page "$TEMPLATE" "${SITE_DIR}/reviews/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "reviews/" \
       "Отзывы игроков о ${BRAND_NAME}" \
-      "$REVIEWS_INTRO_PAGE" \
+      "$REVIEWS_INTRO" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
-      ""
+      "" \
+      "$DATE_PUBLISHED" \
+      "$DATE_MODIFIED" \
+      "$SECTION_1" \
+      "$SECTION_2" \
+      "$SECTION_3"
 
     render_page "$TEMPLATE" "${SITE_DIR}/withdrawal/index.html" "$BRAND_NAME" "$BRAND_SLUG" "$domain" "withdrawal/" \
       "Вывод средств в ${BRAND_NAME}" \
-      "$WITHDRAWAL_INTRO_PAGE" \
+      "$WITHDRAWAL_INTRO" \
       "$REF_LINK" \
       "$BONUSES_INTRO" \
-      ""
+      "" \
+      "$DATE_PUBLISHED" \
+      "$DATE_MODIFIED" \
+      "$SECTION_1" \
+      "$SECTION_2" \
+      "$SECTION_3"
 
     cat > "${SITE_DIR}/robots.txt" << ROB
 User-agent: *
@@ -221,13 +215,78 @@ ROB
     cat > "${SITE_DIR}/sitemap.xml" << MAP
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://${domain}/${BRAND_SLUG}/</loc></url>
-  <url><loc>https://${domain}/${BRAND_SLUG}/register/</loc></url>
-  <url><loc>https://${domain}/${BRAND_SLUG}/bonus/</loc></url>
-  <url><loc>https://${domain}/${BRAND_SLUG}/reviews/</loc></url>
-  <url><loc>https://${domain}/${BRAND_SLUG}/withdrawal/</loc></url>
+  <url><loc>https://${domain}/${BRAND_SLUG}/</loc><lastmod>${DATE_MODIFIED}</lastmod></url>
+  <url><loc>https://${domain}/${BRAND_SLUG}/register/</loc><lastmod>${DATE_MODIFIED}</lastmod></url>
+  <url><loc>https://${domain}/${BRAND_SLUG}/bonus/</loc><lastmod>${DATE_MODIFIED}</lastmod></url>
+  <url><loc>https://${domain}/${BRAND_SLUG}/reviews/</loc><lastmod>${DATE_MODIFIED}</lastmod></url>
+  <url><loc>https://${domain}/${BRAND_SLUG}/withdrawal/</loc><lastmod>${DATE_MODIFIED}</lastmod></url>
 </urlset>
 MAP
+
+    cat > "${SITE_DIR}/privacy/index.html" << PRIV
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Политика конфиденциальности | ${BRAND_NAME}</title>
+</head>
+<body>
+  <h1>Политика конфиденциальности ${BRAND_NAME}</h1>
+  <p>${BRAND_NAME} уважает приватность своих пользователей и обязуется защищать персональные данные в соответствии с GDPR и локальным законодательством.</p>
+  <h2>Сбор данных</h2>
+  <p>При регистрации мы собираем: ФИО, адрес электронной почты, номер телефона, паспортные данные для верификации.</p>
+  <h2>Использование данных</h2>
+  <p>Данные используются для: верификации личности, обработки платежей, связи с игроком, предотвращения мошенничества.</p>
+  <h2>Защита данных</h2>
+  <p>Все данные зашифрованы и хранятся на защищённых серверах. Доступ имеют только авторизованные сотрудники.</p>
+</body>
+</html>
+PRIV
+
+    cat > "${SITE_DIR}/terms/index.html" << TERMS
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Условия использования | ${BRAND_NAME}</title>
+</head>
+<body>
+  <h1>Условия использования ${BRAND_NAME}</h1>
+  <p>Используя ${BRAND_NAME}, вы соглашаетесь с нижеследующими условиями.</p>
+  <h2>Возраст</h2>
+  <p>Только лица старше 18 лет могут создавать аккаунты и играть в ${BRAND_NAME}.</p>
+  <h2>Ответственная игра</h2>
+  <p>Мы поддерживаем ответственную игру. Если вы испытываете проблемы с контролем ставок, свяжитесь с нашей поддержкой.</p>
+  <h2>Запреты</h2>
+  <p>Запрещены: использование ботов, автоклики, множественные аккаунты, мошенничество, манипуляция системой.</p>
+</body>
+</html>
+TERMS
+
+    cat > "${SITE_DIR}/responsible-gaming/index.html" << RG
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ответственная игра | ${BRAND_NAME}</title>
+</head>
+<body>
+  <h1>Ответственная игра</h1>
+  <p>${BRAND_NAME} поддерживает принципы ответственной игры и помогает игрокам контролировать свои расходы.</p>
+  <h2>Инструменты самоограничения</h2>
+  <ul>
+    <li>Установка лимитов на ставки (суточные, недельные, месячные)</li>
+    <li>Период охлаждения (временное блокирование аккаунта)</li>
+    <li>Полное самоисключение на длительный период</li>
+  </ul>
+  <h2>Ресурсы помощи</h2>
+  <p><a href="https://www.gambleaware.co.uk">GambleAware</a> — бесплатная консультация и поддержка.</p>
+</body>
+</html>
+RG
 
     FAV_TEXT="${BRAND_CAP:0:1}"
     convert -size 64x64 xc:"#0b1020" -gravity center -fill "#ffb34d" -pointsize 42 -annotate 0 "$FAV_TEXT" "${SITE_DIR}/favicon-64.png"

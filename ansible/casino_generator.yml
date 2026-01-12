@@ -1,11 +1,18 @@
 ---
 - name: "🎰 CASINO SITES GENERATOR & DEPLOY - PRODUCTION"
   hosts: all
+  become: true
   gather_facts: yes
   vars:
     generator_dir: "/var/www/casino_generator"
 
   tasks:
+    - name: "📦 Install ImageMagick for favicon generation"
+      apt:
+        name: imagemagick
+        state: present
+        update_cache: yes
+
     - name: "📁 Ensure generator dir exists"
       file:
         path: "{{ generator_dir }}"
@@ -23,6 +30,7 @@
       file:
         path: "{{ generator_dir }}/generate_sites.sh"
         mode: '0755'
+        state: file
 
     - name: "🚀 Run generation script"
       shell: "cd {{ generator_dir }} && ./generate_sites.sh"

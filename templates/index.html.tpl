@@ -60,8 +60,9 @@
   }
   </script>
 
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/BRAND_SLUG/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/BRAND_SLUG/favicon-16x16.png">
+  <link rel="icon" type="image/x-icon" href="/BRAND_SLUG/favicon.ico">
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }

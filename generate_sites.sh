@@ -105,6 +105,18 @@ ROB
 </urlset>
 MAP
 
+    # favicons
+
+    FAV_TEXT="${BRAND_CAP:0:1}"
+
+    convert -size 64x64 xc:"#0b1020" -gravity center -fill "#ffb34d" -pointsize 42 -annotate 0 "$FAV_TEXT" "${SITE_DIR}/favicon-64.png"
+
+    convert "${SITE_DIR}/favicon-64.png" -resize 32x32 "${SITE_DIR}/favicon-32x32.png"
+
+    convert "${SITE_DIR}/favicon-64.png" -resize 16x16 "${SITE_DIR}/favicon-16x16.png"
+
+    convert "${SITE_DIR}/favicon-16x16.png" "${SITE_DIR}/favicon-32x32.png" -colors 256 "${SITE_DIR}/favicon.ico"
+
     echo "✅ Generated: ${BRAND_SLUG}.${domain}"
 
   done < "$SUBDOMAINS_FILE"

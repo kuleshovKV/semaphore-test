@@ -9,7 +9,7 @@
   tasks:
     - name: "📦 Install ImageMagick for favicon generation"
       apt:
-        name: imagemagick
+        name: imagemagick-6.q16
         state: present
         update_cache: yes
 

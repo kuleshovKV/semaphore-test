@@ -1,0 +1,435 @@
+---
+# Casino Sites Deployment with Cloudflare Integration
+# Full Ansible Playbook for Production
+# Version: 1.0
+# Date: 2026-01-12
+
+- name: "🎰 CASINO SITES GENERATOR & DEPLOY - PRODUCTION"
+  hosts: all
+  become: true
+  gather_facts: yes
+  
+  vars:
+    generator_dir: "/var/www/casino_generator"
+    sites_dir: "/var/www/casino_sites"
+    log_dir: "/var/log/casino-deployment"
+    domains_file: "{{ generator_dir }}/domains.csv"
+    
+  tasks:
+    # ============================================================
+    # PHASE 1: INSTALL DEPENDENCIES & PREPARE ENVIRONMENT
+    # ============================================================
+    
+    - name: "📦 PHASE 1: Install ImageMagick for favicon generation"
+      apt:
+        name: imagemagick-6.q16
+        state: present
+        update_cache: yes
+      register: imagemagick_install
+      retries: 3
+      delay: 10
+
+    - name: "📁 Create necessary directories"
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ generator_dir }}"
+        - "{{ sites_dir }}"
+        - "{{ log_dir }}"
+
+    - name: "⏰ Create timestamp for logging"
+      set_fact:
+        deployment_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    # ============================================================
+    # PHASE 2: CLONE REPOSITORY & GENERATE SITES
+    # ============================================================
+
+    - name: "📥 PHASE 2: Clone/update git repository"
+      git:
+        repo: "https://github.com/kuleshovKV/semaphore-test.git"
+        dest: "{{ generator_dir }}"
+        version: master
+        force: yes
+      register: git_clone
+      until: git_clone is succeeded
+      retries: 3
+      delay: 10
+
+    - name: "🔧 Ensure generate_sites.sh is executable"
+      file:
+        path: "{{ generator_dir }}/generate_sites.sh"
+        mode: '0755'
+        state: file
+
+    - name: "🚀 Run generation script"
+      shell: |
+        cd {{ generator_dir }}
+        ./generate_sites.sh 2>&1 | tee {{ log_dir }}/generator_{{ deployment_timestamp }}.log
+      register: generation_output
+      timeout: 600
+
+    - name: "✅ Validate generation result"
+      assert:
+        that:
+          - generation_output.rc == 0
+        fail_msg: "Site generation failed!"
+      register: generation_result
+
+    - name: "📋 Show generation result"
+      debug:
+        msg: "{{ generation_output.stdout_lines }}"
+
+    # ============================================================
+    # PHASE 3: READ DOMAINS FROM CSV
+    # ============================================================
+
+    - name: "📖 PHASE 3: Read domains from CSV"
+      block:
+        - name: "Check if domains.csv exists"
+          stat:
+            path: "{{ domains_file }}"
+          register: domains_csv_stat
+
+        - name: "Read domains.csv"
+          slurp:
+            src: "{{ domains_file }}"
+          register: domains_csv_content
+          when: domains_csv_stat.stat.exists
+
+        - name: "Parse domains from CSV"
+          set_fact:
+            domains_list: "{{ (domains_csv_content.content | b64decode).split('\n') | reject('match', '^$') | list }}"
+          when: domains_csv_stat.stat.exists
+
+        - name: "Display domains count"
+          debug:
+            msg: "Found {{ domains_list | length }} domains to process"
+          when: domains_csv_stat.stat.exists
+
+    # ============================================================
+    # PHASE 4: CLOUDFLARE SYNCHRONIZATION
+    # ============================================================
+
+    - name: "☁️ PHASE 4: Cloudflare Synchronization"
+      block:
+        - name: "Check if domain exists in Cloudflare"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones?name={{ item }}"
+            method: GET
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            return_content: yes
+          register: cf_zone_check
+          loop: "{{ domains_list }}"
+          when: domains_list is defined
+          delay: 1
+
+        - name: "Extract existing zone IDs"
+          set_fact:
+            existing_zones: "{{ cf_zone_check.results | map(attribute='json') | map(attribute='result') | map('first', {}) | map(attribute='id') | reject('undefined') | list }}"
+
+        - name: "Get domains that need to be added"
+          set_fact:
+            domains_to_add: "{{ domains_list | difference(existing_zones | map(attribute='name', default='') | list) }}"
+
+        - name: "Add missing domains to Cloudflare"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              account:
+                id: "{{ cf_account_id }}"
+              name: "{{ item }}"
+              type: "full"
+            return_content: yes
+          register: cf_add_domain
+          loop: "{{ domains_to_add | default([]) }}"
+          delay: 0.5
+          when: domains_to_add | length > 0
+
+        - name: "Extract zone IDs from responses"
+          set_fact:
+            zone_mappings: "{{ cf_zone_check.results | map(attribute='json.result.0.id') | list }}"
+
+    # ============================================================
+    # PHASE 5: CREATE DNS RECORDS
+    # ============================================================
+
+    - name: "🌐 PHASE 5: Create DNS Records"
+      block:
+        - name: "Create A records"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item.1 }}/dns_records"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              type: "A"
+              name: "{{ item.0 }}"
+              content: "{{ ansible_default_ipv4.address }}"
+              ttl: 1
+              proxied: true
+            return_content: yes
+            status_code: [200, 400]
+          register: cf_a_record
+          loop: "{{ domains_list | zip(zone_mappings) | list }}"
+          when: domains_list is defined
+          delay: 0.5
+
+        - name: "Create CNAME records for www"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item.1 }}/dns_records"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              type: "CNAME"
+              name: "www.{{ item.0 }}"
+              content: "{{ item.0 }}"
+              ttl: 1
+              proxied: true
+            return_content: yes
+            status_code: [200, 400]
+          register: cf_cname_record
+          loop: "{{ domains_list | zip(zone_mappings) | list }}"
+          when: domains_list is defined
+          delay: 0.5
+
+    # ============================================================
+    # PHASE 6: CONFIGURE WAF RULES (SMART ROUTING)
+    # ============================================================
+
+    - name: "🛡️ PHASE 6: Configure WAF Rules"
+      block:
+        - name: "Create Yandex Bot whitelist rule (200 OK)"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item }}/firewall/rules"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              description: "YandexBot - Allow for indexing"
+              filter:
+                expression: "(cf.http_user_agent contains \"YandexBot\")"
+              action: "allow"
+            return_content: yes
+            status_code: [200, 400]
+          loop: "{{ zone_mappings }}"
+          delay: 0.5
+
+        - name: "Create search referrer redirect rule (301)"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item }}/firewall/rules"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              description: "Search referrer - 301 redirect"
+              filter:
+                expression: "((cf.http_referer contains \"yandex\") or (cf.http_referer contains \"google\") or (cf.http_referer contains \"bing\"))"
+              action: "challenge"
+            return_content: yes
+            status_code: [200, 400]
+          loop: "{{ zone_mappings }}"
+          delay: 0.5
+
+        - name: "Create default block rule (403)"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item }}/firewall/rules"
+            method: POST
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              description: "Default block - 403 for others"
+              filter:
+                expression: "(true)"
+              action: "block"
+            return_content: yes
+            status_code: [200, 400]
+          loop: "{{ zone_mappings }}"
+          delay: 0.5
+
+    # ============================================================
+    # PHASE 7: GET NAMESERVERS FROM CLOUDFLARE
+    # ============================================================
+
+    - name: "🔑 PHASE 7: Get Nameservers from Cloudflare"
+      block:
+        - name: "Fetch nameservers for each domain"
+          uri:
+            url: "https://api.cloudflare.com/client/v4/zones/{{ item }}"
+            method: GET
+            headers:
+              X-Auth-Email: "{{ cf_email }}"
+              X-Auth-Key: "{{ cf_api_key }}"
+              Content-Type: "application/json"
+            return_content: yes
+          register: cf_nameserver_info
+          loop: "{{ zone_mappings }}"
+          delay: 0.5
+
+        - name: "Extract nameservers"
+          set_fact:
+            nameserver_data: "{{ cf_nameserver_info.results | map(attribute='json.result.name_servers') | list }}"
+
+    # ============================================================
+    # PHASE 8: SAVE NAMESERVERS IN MULTIPLE FORMATS
+    # ============================================================
+
+    - name: "💾 PHASE 8: Save Nameservers"
+      block:
+        - name: "Create nameservers TXT file"
+          copy:
+            content: |
+              # Cloudflare Nameservers for {{ inventory_hostname }}
+              # Generated: {{ ansible_date_time.iso8601 }}
+              # 
+              {% for domain, ns_list in (domains_list | zip(nameserver_data) | list) %}
+              Domain: {{ domain }}
+              {% for ns in ns_list %}
+              {{ ns }}
+              {% endfor %}
+              
+              {% endfor %}
+            dest: "{{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.txt"
+            mode: '0644'
+
+        - name: "Create nameservers CSV file"
+          copy:
+            content: |
+              Domain,Nameserver1,Nameserver2
+              {% for domain, ns_list in (domains_list | zip(nameserver_data) | list) %}
+              {{ domain }},{{ ns_list[0] | default('') }},{{ ns_list[1] | default('') }}
+              {% endfor %}
+            dest: "{{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+            mode: '0644'
+
+        - name: "Create nameservers JSON file"
+          copy:
+            content: |
+              {
+                "generated": "{{ ansible_date_time.iso8601 }}",
+                "hostname": "{{ inventory_hostname }}",
+                "nameservers": {
+              {% for domain, ns_list in (domains_list | zip(nameserver_data) | list) %}
+                  "{{ domain }}": {{ ns_list | to_json }}{{ "," if not loop.last else "" }}
+              {% endfor %}
+                }
+              }
+            dest: "{{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.json"
+            mode: '0644'
+
+        - name: "Create registrar instructions"
+          copy:
+            content: |
+              # Registrar Instructions - {{ inventory_hostname }}
+              # Generated: {{ ansible_date_time.iso8601 }}
+              
+              ## Update Nameservers in Your Registrar
+              
+              Use the following nameservers from Cloudflare:
+              
+              {% for domain, ns_list in (domains_list | zip(nameserver_data) | list) %}
+              ### Domain: {{ domain }}
+              
+              {% for ns in ns_list %}
+              - {{ ns }}
+              {% endfor %}
+              
+              {% endfor %}
+              
+              ## Steps to Update:
+              
+              1. Log in to your domain registrar (reg.ru, etc.)
+              2. Go to DNS/Nameserver settings
+              3. Replace existing nameservers with the ones above
+              4. Save changes
+              5. Wait 24-48 hours for DNS propagation
+              
+              ## Verification:
+              
+              Check DNS propagation:
+              ```bash
+              nslookup {{ domains_list | default('example.com') }}
+              dig {{ domains_list | default('example.com') }} NS
+              ```
+            dest: "{{ log_dir }}/REGISTRAR_INSTRUCTIONS_{{ inventory_hostname }}.md"
+            mode: '0644'
+
+    # ============================================================
+    # PHASE 9: DOWNLOAD FILES TO LOCAL MACHINE
+    # ============================================================
+
+    - name: "📥 PHASE 9: Prepare files for download"
+      block:
+        - name: "Create local fetch directory"
+          file:
+            path: "./fetched/{{ inventory_hostname }}"
+            state: directory
+          delegate_to: localhost
+          become: false
+
+        - name: "Fetch nameserver files"
+          fetch:
+            src: "{{ log_dir }}/{{ item }}"
+            dest: "./fetched/{{ inventory_hostname }}/"
+            flat: yes
+          loop:
+            - "NAMESERVERS_{{ inventory_hostname }}.txt"
+            - "NAMESERVERS_BULK_{{ inventory_hostname }}.csv"
+            - "NAMESERVERS_{{ inventory_hostname }}.json"
+            - "REGISTRAR_INSTRUCTIONS_{{ inventory_hostname }}.md"
+
+        - name: "Show deployment summary"
+          debug:
+            msg: |
+              ═══════════════════════════════════════════════════════════
+              ✅ DEPLOYMENT COMPLETED SUCCESSFULLY!
+              ═══════════════════════════════════════════════════════════
+              
+              Host: {{ inventory_hostname }}
+              Timestamp: {{ ansible_date_time.iso8601 }}
+              
+              Domains processed: {{ domains_list | length | default(0) }}
+              
+              Generated files:
+                • {{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.txt
+                • {{ log_dir }}/NAMESERVERS_BULK_{{ inventory_hostname }}.csv
+                • {{ log_dir }}/NAMESERVERS_{{ inventory_hostname }}.json
+                • {{ log_dir }}/REGISTRAR_INSTRUCTIONS_{{ inventory_hostname }}.md
+              
+              Downloaded to:
+                • ./fetched/{{ inventory_hostname }}/
+              
+              Next steps:
+                1. Download NAMESERVERS_BULK_{{ inventory_hostname }}.csv
+                2. Update nameservers in your registrar
+                3. Wait 24-48 hours for DNS propagation
+                4. Verify with: nslookup {{ domains_list[0] | default('example.com') }}
+              
+              ═══════════════════════════════════════════════════════════

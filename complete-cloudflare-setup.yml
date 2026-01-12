@@ -3,40 +3,30 @@
   hosts: all
   gather_facts: yes
   
+  vars:
+    github_repo: "https://github.com/YOUR_USERNAME/casino-cloudflare-setup.git"
+  
   tasks:
-    - name: "Clone repository with domains and subdomains"
-      shell: |
-        rm -rf /tmp/casino-config
-        git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /tmp/casino-config
-        cd /tmp/casino-config
-        ls -la
+    - name: "Clone repository"
+      git:
+        repo: "{{ github_repo }}"
+        dest: /tmp/casino-config
+        version: main
       register: git_clone
 
     - name: "Show cloned files"
+      shell: ls -la /tmp/casino-config/data/
+      register: files_list
+
+    - name: "Display files"
       debug:
-        msg: "{{ git_clone.stdout_lines }}"
+        msg: "{{ files_list.stdout_lines }}"
 
-    - name: "Find domains.csv file"
-      shell: find /tmp/casino-config -name "domains.csv" -type f
-      register: domains_path
-
-    - name: "Find subdomains.csv file"
-      shell: find /tmp/casino-config -name "subdomains.csv" -type f
-      register: subdomains_path
-
-    - name: "Show file paths"
-      debug:
-        msg: |
-          Domains: {{ domains_path.stdout }}
-          Subdomains: {{ subdomains_path.stdout }}
-
-    - name: "Copy domains to /tmp"
-      shell: cp {{ domains_path.stdout }} /tmp/domains.csv
-      when: domains_path.stdout != ""
-
-    - name: "Copy subdomains to /tmp"
-      shell: cp {{ subdomains_path.stdout }} /tmp/subdomains.csv
-      when: subdomains_path.stdout != ""
+    - name: "Copy data files to /tmp"
+      shell: |
+        cp /tmp/casino-config/data/domains.csv /tmp/domains.csv
+        cp /tmp/casino-config/data/subdomains.csv /tmp/subdomains.csv
+        echo "✅ Files copied"
 
     - name: "Read domains"
       shell: cat /tmp/domains.csv
@@ -129,8 +119,6 @@
           [ -z "$domain" ] && continue
           [ "$zone_id" = "NOT_FOUND" ] && continue
           
-          echo "Getting NS for ${domain}..."
-          
           zone_info=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}" \
             -H "X-Auth-Email: {{ cf_email }}" \
             -H "X-Auth-Key: {{ cf_api_key }}" \
@@ -179,7 +167,6 @@
           echo "${domain}:" >> /tmp/dns_records_created.txt
 
           # Root domain
-          echo "  Creating: ${domain} → ${ip}"
           curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
             -H "X-Auth-Email: {{ cf_email }}" \
             -H "X-Auth-Key: {{ cf_api_key }}" \
@@ -189,7 +176,6 @@
           sleep 0.5
 
           # Wildcard
-          echo "  Creating: *.${domain} → ${ip}"
           curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
             -H "X-Auth-Email: {{ cf_email }}" \
             -H "X-Auth-Key: {{ cf_api_key }}" \
@@ -203,7 +189,6 @@
             [ -z "$subdomain" ] && continue
 
             full_domain="${subdomain}.${domain}"
-            echo "  Creating: ${full_domain} → ${ip}"
             curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
               -H "X-Auth-Email: {{ cf_email }}" \
               -H "X-Auth-Key: {{ cf_api_key }}" \
@@ -216,10 +201,6 @@
           echo "" >> /tmp/dns_records_created.txt
         done < /tmp/zone_mapping.txt
       register: dns_creation
-
-    - name: "Show DNS creation output"
-      debug:
-        msg: "{{ dns_creation.stdout_lines }}"
 
     - name: "Show created DNS records"
       shell: cat /tmp/dns_records_created.txt
@@ -234,13 +215,6 @@
         msg: |
           ✅ CLOUDFLARE SETUP COMPLETE!
           
-          📁 CREATED FILES:
-          - /tmp/zone_mapping.txt
+          📁 OUTPUT FILES:
           - /tmp/nameservers_csv.txt (⭐ COPY TO REGISTRAR)
           - /tmp/dns_records_created.txt
-          
-          🎯 NEXT STEPS:
-          1. Copy NS from /tmp/nameservers_csv.txt
-          2. Update registrar with new NS
-          3. Wait 24-48 hours
-          4. Verify DNS propagation
